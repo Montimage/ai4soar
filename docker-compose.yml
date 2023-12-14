@@ -1,0 +1,167 @@
+version: '3.7'
+
+services:
+  cassandra:
+    container_name: cassandra
+    image: cassandra:3.11
+    restart: unless-stopped
+    hostname: cassandra
+    environment:
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=1G
+      - CASSANDRA_CLUSTER_NAME=thp
+    volumes:
+      - ./cassandra/data:/var/lib/cassandra/data
+    networks:
+      - ai4soar
+
+  elasticsearch:
+    container_name: elasticsearch
+    image: elasticsearch:7.11.1
+    environment:
+      - http.host=0.0.0.0
+      - discovery.type=single-node
+      - cluster.name=hive
+      - script.allowed_types= inline
+      - thread_pool.search.queue_size=100000
+      - thread_pool.write.queue_size=10000
+      - gateway.recover_after_nodes=1
+      - xpack.security.enabled=false
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m -Des.logger.level=DEBUG
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/logs:/usr/share/elasticsearch/logs
+    networks:
+      - ai4soar
+
+  cortex:
+    container_name: cortex
+    image: thehiveproject/cortex:latest
+    depends_on:
+      - elasticsearch
+    environment:
+      - 'JOB_DIRECTORY=/opt/cortex/jobs'
+    ports:
+      - '0.0.0.0:9001:9001'
+    volumes:
+      - ./cortex/application.conf:/etc/cortex/application.conf
+      - '/var/run/docker.sock:/var/run/docker.sock'
+      - ./cortex/log/:/var/log/cortex
+      - /tmp:/tmp
+    privileged: true
+    networks:
+      - ai4soar
+
+  thehive:
+    container_name: thehive
+    image: 'thehiveproject/thehive4:latest'
+    restart: unless-stopped
+    depends_on:
+      - cassandra
+    ports:
+      - '0.0.0.0:9000:9000'
+    volumes:
+      - ./thehive/application.conf:/etc/thehive/application.conf
+      - ./thehive/data:/opt/thp/thehive/data
+      - ./thehive/index:/opt/thp/thehive/index
+    command:
+      --cortex-port 9001
+      --cortex-keys ${CORTEX_KEY}
+    networks:
+      - ai4soar
+
+  shuffle-frontend:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    container_name: shuffle-frontend
+    hostname: shuffle-frontend
+    ports:
+      - "${FRONTEND_PORT}:80"
+      - "${FRONTEND_PORT_HTTPS}:443"
+    networks:
+      - ai4soar
+    environment:
+      - BACKEND_HOSTNAME=${BACKEND_HOSTNAME}
+    restart: unless-stopped
+    depends_on:
+      - shuffle-backend
+
+  shuffle-backend:
+    image: ghcr.io/shuffle/shuffle-backend:latest
+    container_name: shuffle-backend
+    hostname: ${BACKEND_HOSTNAME}
+    ports:
+      - "${BACKEND_PORT}:5001"
+    networks:
+      - ai4soar
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${SHUFFLE_APP_HOTLOAD_LOCATION}:/shuffle-apps:z
+      - ${SHUFFLE_FILE_LOCATION}:/shuffle-files:z
+    env_file: .env
+    environment:
+      - SHUFFLE_APP_HOTLOAD_FOLDER=/shuffle-apps
+      - SHUFFLE_FILE_LOCATION=/shuffle-files
+    restart: unless-stopped
+
+  shuffle-orborus:
+    image: ghcr.io/shuffle/shuffle-orborus:latest
+    container_name: shuffle-orborus
+    hostname: shuffle-orborus
+    networks:
+      - ai4soar
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - SHUFFLE_APP_SDK_TIMEOUT=300
+      - ENVIRONMENT_NAME=${ENVIRONMENT_NAME}
+      - BASE_URL=http://${OUTER_HOSTNAME}:5001
+      - DOCKER_API_VERSION=1.40
+      - SHUFFLE_BASE_IMAGE_NAME=${SHUFFLE_BASE_IMAGE_NAME}
+      - SHUFFLE_BASE_IMAGE_REGISTRY=${SHUFFLE_BASE_IMAGE_REGISTRY}
+      - SHUFFLE_BASE_IMAGE_TAG_SUFFIX=${SHUFFLE_BASE_IMAGE_TAG_SUFFIX}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - SHUFFLE_PASS_WORKER_PROXY=${SHUFFLE_PASS_WORKER_PROXY}
+      - SHUFFLE_PASS_APP_PROXY=${SHUFFLE_PASS_APP_PROXY}
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+
+  shuffle-opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    hostname: shuffle-opensearch
+    container_name: shuffle-opensearch
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms2048m -Xmx2048m"
+      - bootstrap.memory_lock=true
+      - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
+      - cluster.initial_master_nodes=shuffle-opensearch
+      - cluster.routing.allocation.disk.threshold_enabled=false
+      - cluster.name=shuffle-cluster
+      - node.name=shuffle-opensearch
+      - node.store.allow_mmap=false
+      - discovery.seed_hosts=shuffle-opensearch
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${DB_LOCATION}:/usr/share/opensearch/data:z
+    ports:
+      - 9200:9200
+    networks:
+      - ai4soar
+    restart: unless-stopped
+
+networks:
+  ai4soar:
+    driver: bridge
+
