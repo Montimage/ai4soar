@@ -1,0 +1,7 @@
+cassandra/
+cortex/
+elasticsearch/
+shuffle-apps/
+shuffle-database/
+shuffle-files/
+thehive/
