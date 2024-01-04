@@ -11,5 +11,5 @@ KAFKA_CONFIG = {
 }
 
 # Shuffle configuration
-SHUFFLE_API_BASE_URL = "http://localhost:3001/api/v1/workflows"
+SHUFFLE_API_BASE_URL = "http://localhost:3001/api/v1"
 SHUFFLE_API_TOKEN = "e8a6e9a9-e18f-4b80-99a1-9f47a2efa4e1"
