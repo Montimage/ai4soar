@@ -156,7 +156,7 @@ services:
     volumes:
       - ${DB_LOCATION}:/usr/share/opensearch/data:z
     ports:
-      - 9200:9200
+      - 9400:9400
     networks:
       - ai4soar
     restart: unless-stopped
