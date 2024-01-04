@@ -39,6 +39,22 @@ def execute_workflow(workflow_id):
     except requests.RequestException as e:
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
 
+# TODO: parameters "execution_id" and "authorization" extracted from execute_workflow()
+def get_workflow_results():
+    execute_url = f"{SHUFFLE_API_BASE_URL}/streams/results"
+    data = request.get_json()
+
+    try:
+        response = requests.post(execute_url, headers=headers, json=data)
+
+        if response.status_code == 200:
+            return jsonify(response.json()["result"])
+
+        return jsonify({"error": f"Failed to execute workflow. Status Code: {response.status_code}"})
+
+    except requests.RequestException as e:
+        return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
+
 
 if __name__ == '__main__':
     app.run(port=PORT, debug=True)
