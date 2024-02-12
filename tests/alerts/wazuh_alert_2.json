@@ -1,0 +1,99 @@
+{
+    "_index": "wazuh-alerts-4.x-2024.01.04",
+    "_id": "N8U91owBI3sUyuijdFg0",
+    "_version": 1,
+    "_score": null,
+    "_source": {
+        "predecoder": {
+            "hostname": "ai4soar",
+            "program_name": "sshd",
+            "timestamp": "Jan  4 20:49:51"
+        },
+        "input": {
+            "type": "log"
+        },
+        "agent": {
+            "name": "ai4soar",
+            "id": "000"
+        },
+        "manager": {
+            "name": "ai4soar"
+        },
+        "data": {
+            "srcip": "10.0.2.1",
+            "dstuser": "strongcourage",
+            "srcport": "63229"
+        },
+        "rule": {
+            "mail": false,
+            "level": 5,
+            "hipaa": [
+                "164.312.b"
+            ],
+            "pci_dss": [
+                "10.2.4",
+                "10.2.5"
+            ],
+            "tsc": [
+                "CC6.1",
+                "CC6.8",
+                "CC7.2",
+                "CC7.3"
+            ],
+            "description": "sshd: authentication failed.",
+            "groups": [
+                "syslog",
+                "sshd",
+                "authentication_failed"
+            ],
+            "nist_800_53": [
+                "AU.14",
+                "AC.7"
+            ],
+            "gdpr": [
+                "IV_35.7.d",
+                "IV_32.2"
+            ],
+            "firedtimes": 1,
+            "mitre": {
+                "technique": [
+                    "Password Cracking",
+                    "SSH"
+                ],
+                "id": [
+                    "T1110.001",
+                    "T1021.004"
+                ],
+                "tactic": [
+                    "Credential Access",
+                    "Lateral Movement"
+                ]
+            },
+            "id": "5760",
+            "gpg13": [
+                "7.1"
+            ]
+        },
+        "location": "/var/log/auth.log",
+        "decoder": {
+            "parent": "sshd",
+            "name": "sshd"
+        },
+        "id": "1704401393.810686",
+        "full_log": "Jan  4 20:49:51 ai4soar sshd[94488]: Failed password for strongcourage from 10.0.2.2 port 63228 ssh2",
+        "timestamp": "2024-01-04T20:49:53.154+0000"
+    },
+    "fields": {
+        "timestamp": [
+            "2024-01-04T20:49:53.154Z"
+        ]
+    },
+    "highlight": {
+        "manager.name": [
+            "@opensearch-dashboards-highlighted-field@ai4soar@/opensearch-dashboards-highlighted-field@"
+        ]
+    },
+    "sort": [
+        1704401393154
+    ]
+}
