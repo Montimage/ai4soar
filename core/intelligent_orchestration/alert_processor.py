@@ -2,9 +2,9 @@ import numpy as np
 import tensorflow as tf
 import os
 import json
-from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, manhattan_distances
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
+from similarity_learning import calculate_similarity_scores
 #from constants import SELECTED_FEATURES
 
 # Relevant keys for one-hot encoding
@@ -123,13 +123,8 @@ if __name__ == '__main__':
                 all_alerts.append(alert)
 
     one_hot_alerts = convert_one_hot_alerts(all_alerts)
-    encoded_alerts = encode_alerts(one_hot_alerts)
+    historical_encoded_alerts = encode_alerts(one_hot_alerts)
 
     # Testing similarity scores
     new_encoded_alert = np.array([0.99059486,0.94087994,0.98448485,0.9757894,0.9952647,0.03528981])
-    cosine_similarity_scores = cosine_similarity([new_encoded_alert], encoded_alerts)
-    print("Cosine similarity scores:", cosine_similarity_scores)
-    euclidean_similarity_scores = euclidean_distances([new_encoded_alert], encoded_alerts)
-    print("Euclidean similarity scores:", euclidean_similarity_scores)
-    manhattan_similarity_scores = manhattan_distances([new_encoded_alert], encoded_alerts)
-    print("Manhattan similarity scores:", manhattan_similarity_scores)
+    similarity_scores = calculate_similarity_scores(new_encoded_alert, historical_encoded_alerts, "cosine")
