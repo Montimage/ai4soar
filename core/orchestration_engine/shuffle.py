@@ -11,13 +11,21 @@ def get_workflows():
     try:
         response = requests.get(execute_url, headers=headers)
         workflows = response.json()
+        #print(workflows)
         workflow_names = [workflow["name"] for workflow in workflows]
         workflow_ids = [workflow["id"] for workflow in workflows]
-        for name, _id in zip(workflow_names, workflow_ids):
-            print(f"Workflow name: {name}, Workflow id: {_id}")
+        workflow_descriptions = [workflow["description"] for workflow in workflows]
+        for name, _id, description in zip(workflow_names, workflow_ids, workflow_descriptions):
+            print(f"Workflow name: {name}, id: {_id}, description: {description}")
 
         if response.status_code == 200:
-            return jsonify(workflow_ids)
+            # Create a list of dictionaries containing id, name, and description for each workflow
+            workflow_data = [{
+                                "id": workflow["id"],
+                                "name": workflow["name"],
+                                "description": workflow["description"]
+                            } for workflow in workflows]
+            return jsonify(workflow_data)
 
         return jsonify({"error": f"Failed to retrieve workflows. Status Code: {response.status_code}"})
 
