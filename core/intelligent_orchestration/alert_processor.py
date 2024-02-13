@@ -4,7 +4,6 @@ import os
 import json
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
-from similarity_learning import calculate_similarity_scores
 #from constants import SELECTED_FEATURES
 
 # Relevant keys for one-hot encoding
@@ -111,6 +110,7 @@ def encode_alerts(one_hot_vectors_alerts):
     return encoded_alerts
 
 if __name__ == '__main__':
+    """
     ALERTS_DIR = "../../tests/alerts"
     all_alerts = []
 
@@ -128,3 +128,4 @@ if __name__ == '__main__':
     # Testing similarity scores
     new_encoded_alert = np.array([0.99059486,0.94087994,0.98448485,0.9757894,0.9952647,0.03528981])
     similarity_scores = calculate_similarity_scores(new_encoded_alert, historical_encoded_alerts, "cosine")
+    """

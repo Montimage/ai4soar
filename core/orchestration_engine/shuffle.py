@@ -5,35 +5,35 @@ from core.constants import PORT, SHUFFLE_API_BASE_URL, SHUFFLE_API_TOKEN
 app = Flask(__name__)
 headers = {"Authorization": f"Bearer {SHUFFLE_API_TOKEN}"}
 
-def get_workflows():
+def get_playbooks():
     execute_url = f"{SHUFFLE_API_BASE_URL}/workflows"
 
     try:
         response = requests.get(execute_url, headers=headers)
-        workflows = response.json()
-        #print(workflows)
-        workflow_names = [workflow["name"] for workflow in workflows]
-        workflow_ids = [workflow["id"] for workflow in workflows]
-        workflow_descriptions = [workflow["description"] for workflow in workflows]
-        for name, _id, description in zip(workflow_names, workflow_ids, workflow_descriptions):
+        playbooks = response.json()
+        #print(playbooks)
+        playbook_names = [playbook["name"] for playbook in playbooks]
+        playbook_ids = [playbook["id"] for playbook in playbooks]
+        playbook_descriptions = [playbook["description"] for playbook in playbooks]
+        for name, _id, description in zip(playbook_names, playbook_ids, playbook_descriptions):
             print(f"Workflow name: {name}, id: {_id}, description: {description}")
 
         if response.status_code == 200:
-            # Create a list of dictionaries containing id, name, and description for each workflow
-            workflow_data = [{
-                                "id": workflow["id"],
-                                "name": workflow["name"],
-                                "description": workflow["description"]
-                            } for workflow in workflows]
-            return jsonify(workflow_data)
+            # Create a list of dictionaries containing id, name, and description for each playbook
+            playbook_data = [{
+                                "id": playbook["id"],
+                                "name": playbook["name"],
+                                "description": playbook["description"]
+                            } for playbook in playbooks]
+            return playbook_data
 
-        return jsonify({"error": f"Failed to retrieve workflows. Status Code: {response.status_code}"})
+        return jsonify({"error": f"Failed to retrieve playbooks. Status Code: {response.status_code}"})
 
     except requests.RequestException as e:
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
 
-def execute_workflow(workflow_id):
-    execute_url = f"{SHUFFLE_API_BASE_URL}/workflows/{workflow_id}/execute"
+def execute_playbook(playbook_id):
+    execute_url = f"{SHUFFLE_API_BASE_URL}/workflows/{playbook_id}/execute"
     data = request.get_json()
 
     try:
@@ -42,13 +42,13 @@ def execute_workflow(workflow_id):
         if response.status_code == 200:
             return jsonify(response.json())
 
-        return jsonify({"error": f"Failed to execute workflow. Status Code: {response.status_code}"})
+        return jsonify({"error": f"Failed to execute playbook. Status Code: {response.status_code}"})
 
     except requests.RequestException as e:
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
 
-# TODO: parameters "execution_id" and "authorization" extracted from execute_workflow()
-def get_workflow_results():
+# TODO: parameters "execution_id" and "authorization" extracted from execute_playbook()
+def get_playbook_results():
     execute_url = f"{SHUFFLE_API_BASE_URL}/streams/results"
     data = request.get_json()
 
@@ -58,7 +58,7 @@ def get_workflow_results():
         if response.status_code == 200:
             return jsonify(response.json()["result"])
 
-        return jsonify({"error": f"Failed to execute workflow. Status Code: {response.status_code}"})
+        return jsonify({"error": f"Failed to execute playbook. Status Code: {response.status_code}"})
 
     except requests.RequestException as e:
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
