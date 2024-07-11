@@ -1,4 +1,5 @@
 # Server configuration
+SERVER_IP = "0.0.0.0"
 PORT = 5000
 
 # Kafka consumer configuration

@@ -5,9 +5,37 @@ from core.playbook_consumer.playbook_processor import connect_to_mongodb, list_a
 from core.intelligent_orchestration.alert_processor import convert_one_hot_alert, convert_one_hot_alerts, encode_alerts
 from core.intelligent_orchestration.similarity_learning import calculate_similarity_scores
 from core.orchestration_engine.shuffle import get_playbooks, execute_playbook, get_playbook_results
-from core.constants import PORT, SHUFFLE_API_BASE_URL
+from core.constants import SERVER_IP, PORT, SHUFFLE_API_BASE_URL
+from core.orchestration_engine.caldera_soar import execute_ability
 
 app = Flask(__name__)
+
+# Execute Caldera blue agent
+@app.route('/execute_ability', methods=['POST'])
+def execute_ability_api():
+    try:
+        ability_id = request.form.get('ability_id')
+        target = request.form.get('target')
+        #data = request.get_json()
+        #ability_id = data['ability_id']
+        #target = data['target']
+
+        if not ability_id or not target:
+            return jsonify({'error': 'Invalid input'}), 400
+
+        # Call execute_ability function
+        response = execute_ability(ability_id, target)
+
+        return jsonify({'message': 'Ability execution initiated successfully', 'response': response.text}), 200
+
+    except KeyError as e:
+        return jsonify({'error': f'Missing required parameter: {str(e)}'}), 400
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # List all playbook's information, including id, name and description
 # or a specific playbook's information
@@ -186,4 +214,4 @@ def identify_top_k_similar_alerts_route():
 
 
 if __name__ == '__main__':
-    app.run(port=PORT, debug=True)
+    app.run(host=SERVER_IP, port=PORT, debug=True)

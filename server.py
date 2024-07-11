@@ -1,7 +1,7 @@
-from confluent_kafka import Consumer, KafkaError
+#from confluent_kafka import Consumer, KafkaError
 from flask import Flask, request
-from core.playbook_consumer.kafka_consumer import app, kafka_consumer
-from core.constants import PORT
+#from core.playbook_consumer.kafka_consumer import app, kafka_consumer
+from core.constants import SERVER_IP, PORT
 from core.api.api import app
 
 
@@ -14,4 +14,4 @@ if __name__ == '__main__':
     """
 
     # Run the Flask server
-    app.run(port=PORT, debug=True)
+    app.run(host=SERVER_IP, port=PORT, debug=True)
