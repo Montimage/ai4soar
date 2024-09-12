@@ -22,22 +22,25 @@ app = Flask(__name__)
 
 # Kafka configuration
 KAFKA_BROKERS = 'ai4-vm-01.kafka.com:9093'
-#KAFKA_TOPIC = 'ai4soar.test'
-KAFKA_AI4SOAR_TOPIC = 'ai4soar.sc1.1.responses'
-KAFKA_AI4TRIAGE_TOPIC = 'ai4triage.sc1.1.alerts'
-#KAFKA_CONSUME_GROUP = None
 KAFKA_SECURITY_PROTOCOL = 'SSL'
 KAFKA_SSL_CAFILE = '/home/user/kafka_certs/ai4soar_CARoot.pem'
 KAFKA_SSL_CERTFILE = '/home/user/kafka_certs/ai4soar_certificate.pem'
 KAFKA_SSL_KEYFILE = '/home/user/kafka_certs/ai4soar_RSAkey.pem'
 KAFKA_SSL_PASSWORD = '4XpUglfq9x5b'
 
-# Retrieve the most recent alerts with the specified characteristics
+# Retrieve recent Wazuh's alerts with the specified characteristics
 @app.route('/fetch_alerts', methods=['GET'])
 def fetch_alerts_api():
     try:
-        alerts = fetch_alerts()
-        return jsonify(alerts), 200
+        usecase = request.args.get('usecase')
+        if not usecase:
+            return jsonify({'error': 'usecase parameter is required'}), 400
+
+        alerts = fetch_alerts(usecase)
+        if alerts:
+            return jsonify(alerts), 200
+        else:
+            return jsonify({'error': 'No alerts found or an error occurred'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -52,14 +55,33 @@ producer_config = {
     'value_serializer': lambda v: json.dumps(v).encode('utf-8')
 }
 
+# Validate and map scenarios to Kafka topics
+def get_kafka_topic_for_scenario(scenario):
+    valid_scenarios = ['sc11', 'sc12', 'sc13', 'sc21', 'sc22', 'sc23', 'sc31', 'sc32', 'sc33']
+    if scenario.lower() not in valid_scenarios:
+        return None, None
+
+    number = scenario[2:]
+
+    # Map to Kafka topics
+    kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
+    kafka_soar_topic = f"ai4soar.sc{number[0]}.{number[1]}.responses"
+
+    return kafka_triage_topic, kafka_soar_topic
+
 @app.route('/publish_alerts', methods=['POST'])
 def publish_alerts():
     data = request.get_json()
-    kafka_topic = KAFKA_AI4TRIAGE_TOPIC
+    scenario = request.args.get('scenario').lower()
+
+    # Get Kafka topics based on scenario
+    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    if not kafka_triage_topic:
+        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
     
     producer = KafkaProducer(**producer_config)
     try:
-        producer.send(kafka_topic, value=data)
+        producer.send(kafka_triage_topic, value=data)
         producer.flush()
         return jsonify({'status': 'success', 'message': 'Alert published successfully'}), 200
     except Exception as e:
@@ -67,30 +89,108 @@ def publish_alerts():
     finally:
         producer.close()
 
-@app.route('/publish', methods=['POST'])
-def publish_message():
-    data = request.get_json()
-    message = json.dumps(data).encode('utf-8')
-    kafka_topic = KAFKA_AI4SOAR_TOPIC
-
-    producer = KafkaProducer(**producer_config)
+@app.route('/consume_alerts', methods=['GET'])
+def consume_alerts():
+    scenario = request.args.get('scenario').lower()
+    # Get Kafka topics based on scenario
+    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    if not kafka_triage_topic:
+        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
+    
     try:
-        producer.send(kafka_topic, message)
-        producer.flush()
-        return jsonify({'status': 'success', 'message': 'Message published successfully'}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-    finally:
-        producer.close()
+        consumer = KafkaConsumer(
+            kafka_triage_topic,
+            bootstrap_servers=KAFKA_BROKERS,
+            security_protocol=KAFKA_SECURITY_PROTOCOL,
+            ssl_check_hostname=False,
+            ssl_cafile=KAFKA_SSL_CAFILE,
+            ssl_certfile=KAFKA_SSL_CERTFILE,
+            ssl_keyfile=KAFKA_SSL_KEYFILE,
+            ssl_password=KAFKA_SSL_PASSWORD,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            group_id=None,
+            #group_id='latest-alert-consumer-group',
+            #auto_offset_reset='latest',
+            auto_offset_reset='earliest',
+            enable_auto_commit=False
+        )
 
-def produce_stix_response_to_kafka(response_body, kafka_topic):
+        # Attempt to poll for a message with a timeout
+        message = consumer.poll(timeout_ms=5000)  # 5-second timeout
+
+        if message:
+            for tp, messages in message.items():
+                for msg in messages:
+                    print(f"Consumed message: {msg.value}")
+                    return jsonify({'status': 'success', 'message': msg.value}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'No messages available'}), 404
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        if consumer:
+            consumer.close()
+
+def produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_topic):
     try:
         producer = KafkaProducer(**producer_config)
         
-        stix_response = {
+        # Extract relevant fields from wazuh_alert
+        agent_ip = wazuh_alert['_source']['agent']['ip']
+        target_user = wazuh_alert['_source']['data']['win']['eventdata']['targetUserName']
+        event_id = wazuh_alert['_source']['data']['win']['system']['eventID']
+        timestamp = wazuh_alert['_source'].get('@timestamp', datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+
+        # Concatenate the extracted fields to form the input string
+        hash_input = f"{agent_ip}-{target_user}-{event_id}-{timestamp}"
+
+        # Generating the SHA-256 hash
+        sha256_hash = hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
+
+        stix_bundle = {
             "type": "bundle",
             "id": f"bundle--{uuid.uuid4()}",
             "objects": [
+                {
+                    "type": "identity",
+                    "spec_version": "2.1",
+                    "id": f"identity--{uuid.uuid4()}",
+                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "name": "Wazuh",
+                    "identity_class": "organization"
+                },
+                {
+                    "type": "observed-data",
+                    "spec_version": "2.1",
+                    "id": f"observed-data--{uuid.uuid4()}",
+                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "first_observed": wazuh_alert["_source"]["@timestamp"],
+                    "last_observed": wazuh_alert["_source"]["@timestamp"],
+                    "number_observed": 1,
+                    "objects": {
+                        "0": {
+                            "type": "file",
+                            "name": wazuh_alert["_source"]["location"],
+                            "hashes": {
+                                "SHA-256": sha256_hash
+                            }
+                        },
+                        "1": {
+                            "type": "ipv4-addr",
+                            "value": wazuh_alert["_source"]["agent"]["ip"]
+                        },
+                        "2": {
+                            "type": "user-account",
+                            "user_id": target_user
+                        }
+                    },
+                    "created_by_ref": f"identity--{uuid.uuid4()}"
+                },
                 {
                     "type": "x-defense-action",
                     "id": f"x-defense-action--{uuid.uuid4()}",
@@ -107,7 +207,7 @@ def produce_stix_response_to_kafka(response_body, kafka_topic):
             ]
         }
 
-        producer.send(kafka_topic, stix_response)
+        producer.send(kafka_topic, stix_bundle)
         producer.flush()
         print(f"STIX response sent to topic '{kafka_topic}' successfully.")
     except Exception as e:
@@ -115,7 +215,7 @@ def produce_stix_response_to_kafka(response_body, kafka_topic):
     finally:
         producer.close()
 
-def produce_stix_response_with_alert_to_kafka(response_body, wazuh_alert, kafka_topic):
+def produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_topic):
     try:
         producer = KafkaProducer(**producer_config)
 
@@ -195,164 +295,83 @@ def produce_stix_response_with_alert_to_kafka(response_body, wazuh_alert, kafka_
         print(f"Error producing STIX response to Kafka topic: {e}")
     finally:
         producer.close()
+"""
+@app.route('/publish_responses_with_alert_stix', methods=['POST'])
+def publish_responses_with_alert_stix():
+    scenario = request.args.get('scenario').lower()
+    # Get Kafka topics based on scenario
+    _, kafka_soar_topic = get_kafka_topic_for_scenario(scenario)
+    if not kafka_soar_topic:
+        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
+    
+    try:
+        # Check if the file is in the request
+        if 'wazuh_alert_file' not in request.files:
+            return jsonify({"status": "error", "message": "Missing wazuh_alert_file in the request."}), 400
+
+        # Get the file from the request
+        file = request.files['wazuh_alert_file']
+
+        # Ensure the file is a valid JSON file
+        try:
+            wazuh_alert = json.load(file)
+            print(wazuh_alert)
+        except json.JSONDecodeError:
+            return jsonify({"status": "error", "message": "Invalid JSON file."}), 400
+
+        response_body = request.form.get('response_body')
+        if response_body:
+            response_body = json.loads(response_body)  # Convert JSON string to dict
+        else:
+            return jsonify({"status": "error", "message": "Missing response_body in the request."}), 400
+
+        #produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_soar_topic)
+        produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
+        return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
+    except KeyError as e:
+        return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
+"""
+
 
 @app.route('/publish_responses_with_alert_stix', methods=['POST'])
 def publish_responses_with_alert_stix():
-    try:
-        data = request.get_json()
-        response_body = data.get('response_body')
-        wazuh_alert = data.get('wazuh_alert')
-        kafka_topic = KAFKA_AI4SOAR_TOPIC
-
-        if not response_body or not wazuh_alert:
-            return jsonify({"status": "error", "message": "Missing response_body or wazuh_alert in the request."}), 400
-
-        produce_stix_response_with_alert_to_kafka(response_body, wazuh_alert, kafka_topic)
-        return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
-    except KeyError as e:
-        return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
-
-@app.route('/publish_responses_stix', methods=['POST'])
-def publish_responses_stix():
-    data = request.get_json()
-    kafka_topic = KAFKA_AI4SOAR_TOPIC
-    try:
-        #response_body = data['response_body']
-        produce_stix_response_to_kafka(data, kafka_topic)
-        return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
-    except KeyError as e:
-        return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
-
-def produce_stix_file_to_kafka_topic(ca_cert, cert_file, key_file, password, topic_name, stix_file_path):
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BROKERS,
-            security_protocol=KAFKA_SECURITY_PROTOCOL,
-            ssl_check_hostname=False,
-            ssl_cafile=KAFKA_SSL_CAFILE,
-            ssl_certfile=KAFKA_SSL_CERTFILE,
-            ssl_keyfile=KAFKA_SSL_KEYFILE,
-            ssl_password=KAFKA_SSL_PASSWORD
-        )
-
-        with open(stix_file_path, 'r') as file:
-            stix_content = file.read()
-
-        producer.send(topic_name, stix_content.encode('utf-8'))
-        producer.flush()
-        print(f"STIX file content sent to topic '{topic_name}' successfully.")
-    except KafkaError as e:
-        print(f"Error producing messages to Kafka topic: {e}")
-    finally:
-        producer.close()
-
-@app.route('/publish_stix', methods=['POST'])
-def publish_stix_file():
-    data = request.get_json()
-    stix_file_path = data.get('stix_file_path')
-    
-    if not stix_file_path or not os.path.exists(stix_file_path):
-        return jsonify({'status': 'error', 'message': 'STIX file path is invalid or file does not exist'}), 400
+    scenario = request.args.get('scenario').lower()
+    # Get Kafka topics based on scenario
+    _, kafka_soar_topic = get_kafka_topic_for_scenario(scenario)
+    if not kafka_soar_topic:
+        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
     try:
-        produce_stix_file_to_kafka_topic(ca_cert, cert_file, key_file, password, kafka_topic, stix_file_path)
-        return jsonify({'status': 'success', 'message': 'STIX file content published successfully'}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# TODO: did not work
-@app.route('/consume_alerts', methods=['GET'])
-def consume_alerts():
-    kafka_topic = KAFKA_AI4TRIAGE_TOPIC
-    try:
-        consumer = KafkaConsumer(
-            kafka_topic,
-            bootstrap_servers=KAFKA_BROKERS,
-            security_protocol=KAFKA_SECURITY_PROTOCOL,
-            ssl_check_hostname=False,
-            ssl_cafile=KAFKA_SSL_CAFILE,
-            ssl_certfile=KAFKA_SSL_CERTFILE,
-            ssl_keyfile=KAFKA_SSL_KEYFILE,
-            ssl_password=KAFKA_SSL_PASSWORD,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            group_id=None,
-            #group_id='latest-alert-consumer-group',
-            #auto_offset_reset='latest',
-            auto_offset_reset='earliest',
-            enable_auto_commit=False
-        )
-
-        # Attempt to poll for a message with a timeout
-        message = consumer.poll(timeout_ms=5000)  # 5-second timeout
-
-        if message:
-            for tp, messages in message.items():
-                for msg in messages:
-                    print(f"Consumed message: {msg.value}")
-                    return jsonify({'status': 'success', 'message': msg.value}), 200
+        response_body = request.form.get('response_body')
+        print(response_body)
+        if response_body:
+            response_body = json.loads(response_body)
         else:
-            return jsonify({'status': 'error', 'message': 'No messages available'}), 404
+            return jsonify({"status": "error", "message": "Missing response_body in the request."}), 400
 
+        wazuh_alert = request.form.get('wazuh_alert')
+        print(wazuh_alert)
+        if wazuh_alert:
+            wazuh_alert = json.loads(wazuh_alert)
+        else:
+            return jsonify({"status": "error", "message": "Missing wazuh_alert in the request."}), 400
+        
+        produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
+        return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
+    except KeyError as e:
+        return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
     except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
 
-    finally:
-        if consumer:
-            consumer.close()
-"""
-    try:
-        message = next(consumer)
-        consumer.commit()  # Commit the offset to mark the message as read
-        print(f"Consumed message: {message.value}")
-        return jsonify({'status': 'success', 'message': message.value}), 200
-    except StopIteration:
-        return jsonify({'status': 'error', 'message': 'No messages available'}), 404
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-    finally:
-        consumer.close()
-"""
-"""
-    messages = []
-    try:
-        for message in consumer:
-            messages.append(message.value)
-            print(f"Consumed message: {message.value}")
-            if len(messages) >= 10:  # Limiting to 10 messages for demonstration, adjust as needed
-                break
-        return jsonify({'status': 'success', 'messages': messages}), 200
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-    finally:
-        consumer.close()
-"""
 # Execute Caldera blue agent
 @app.route('/execute_ability', methods=['POST'])
 def execute_ability_api():
     try:
         ability_id = request.form.get('ability_id')
         target = request.form.get('target')
-        #data = request.get_json()
-        #ability_id = data['ability_id']
-        #target = data['target']
         
-        """
-        if not ability_id or not target:
-            return jsonify({'error': 'Invalid input'}), 400
-
-        # Call execute_ability function
-        response = execute_ability(ability_id, target)
-
-        return jsonify({'message': 'Ability execution initiated successfully', 'response': response.text}), 200
-        """
-
         # If ability_id is empty and target is not empty, consider it as a no-op
         if ability_id == "" and target != "":
             return jsonify({'message': 'No action taken as ability_id is empty and target is provided.'}), 200

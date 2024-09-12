@@ -1,14 +1,22 @@
+import sys
 import requests
 import json
 import time
 from requests.auth import HTTPBasicAuth
 
 # Wazuh server details
-wazuh_server = 'https://192.168.21.35:9200'
+wazuh_servers = {
+    'uc1': 'https://192.168.21.35:9200',
+    'uc2': '',
+    'uc3': 'https://192.168.56.50:9200'
+}
 
 # Authentication credentials
-username = 'admin'
-password = 'SecretPassword'
+credentials = {
+    'uc1': ('admin', 'SecretPassword'),
+    'uc2': ('', ''),
+    'uc3': ('admin', 'admin')
+}
 
 # API endpoint for fetching alerts
 endpoint = '/wazuh-alerts-*/_search'
@@ -18,8 +26,8 @@ headers = {
     'Content-Type': 'application/json'
 }
 
-# Query parameters for fetching the most recent alerts
-query_params_recent = {
+# TODO: Query parameters for fetching the most recent alerts
+query_params_uc2 = {
     "size": 10,  # Number of alerts to fetch
     "sort": [{
         "@timestamp": {
@@ -29,7 +37,7 @@ query_params_recent = {
 }
 
 # Query parameters for fetching the most recent alerts with specific characteristics
-query_params = {
+query_params_uc1 = {
     "size": 1,
     "sort": [{
         "@timestamp": {
@@ -48,13 +56,48 @@ query_params = {
     }
 }
 
-def fetch_alerts():
+# TODO: update
+query_params_uc3 = {
+    "size": 1,
+    "sort": [{
+        "@timestamp": {
+            "order": "desc"
+        }
+    }],
+    "query": {
+        "bool": {
+            "must": [
+                {"match": {"agent.ip": "192.168.62.52"}},
+                {"match": {"rule.groups": "win_evt_channel"}},
+                #{"wildcard": {"rule.description": "*pass-the-hash*"}},
+                {"wildcard": {"rule.description": "*Remote Desktop Connection (RDP)*"}},
+            ]
+        }
+    }
+}
+
+def fetch_alerts(usecase):
+    # Select the appropriate Wazuh server, credentials, and query parameters based on the usecase
+    wazuh_server = wazuh_servers.get(usecase)
+    auth = credentials.get(usecase)
+
+    # Select the appropriate query parameters
+    if usecase == 'uc1':
+        query_params = query_params_uc1
+    elif usecase == 'uc2':
+        query_params = query_params_uc2
+    elif usecase == 'uc3':
+        query_params = query_params_uc3
+    else:
+        print(f"Invalid usecase: {usecase}")
+        return None
+
     # Make the request to the Wazuh API with basic authentication
     response = requests.get(
         wazuh_server + endpoint,
         headers=headers,
         json=query_params,
-        auth=(username, password),
+        auth=auth,
         verify=False  # Disable SSL certificate verification
     )
 
@@ -70,10 +113,16 @@ def fetch_alerts():
         print(response.text)
         return None
 
-"""
-while True:
-    fetch_alerts()
-    print("Wait for 30 seconds before the next query")
-    time.sleep(30)
-"""
-fetch_alerts()
+#fetch_alerts("UC1")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 wazuh.py <usecase (uc1, uc2, uc3)>")
+        return
+    
+    usecase = sys.argv[1]
+    alerts = fetch_alerts(usecase)
+
+if __name__ == "__main__":
+    main()
+
