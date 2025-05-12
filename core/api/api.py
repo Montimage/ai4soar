@@ -67,7 +67,7 @@ def get_kafka_topic_for_scenario(scenario):
         kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
     elif scenario in ['sc12']:
         #kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}"
-        kafka_triage_topic = f"ai4soar.test"
+        kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}.test"
     elif scenario == 'sc33':
         kafka_triage_topic = f"ai4deceive.sc{number[0]}.{number[1]}.mmt_alerts"
     kafka_soar_topic = f"ai4soar.sc{number[0]}.{number[1]}.responses"
@@ -174,8 +174,7 @@ def consume_deceive_strategy():
 def consume_alerts():
     scenario = request.args.get('scenario').lower()
     # Get Kafka topics based on scenario
-    #kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
-    kafka_triage_topic = "ai4soar.test"
+    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
     if not kafka_triage_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
@@ -395,26 +394,48 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
     try:
         producer = KafkaProducer(**producer_config)
 
+        # Debug logging
+        print("Received alert:", json.dumps(alert, indent=2))
+        print("Received response_body:", json.dumps(response_body, indent=2))
+
         # Extract relevant fields from alert
         flow_features = alert.get('flow_features', {})
+        if not flow_features:
+            print("Warning: No flow_features found in alert")
+            flow_features = {}
+
         src_ip = flow_features.get('Src IP')
         dst_ip = flow_features.get('Dst IP')
-        src_port = flow_features.get('Src Port')
-        dst_port = flow_features.get('Dst Port')
-        protocol = flow_features.get('Protocol')
+        src_port = int(flow_features.get('Src Port', 0))
+        dst_port = int(flow_features.get('Dst Port', 0))
+        protocol = int(flow_features.get('Protocol', 0))
         timestamp = flow_features.get('Timestamp')
         attack_type = alert.get('attack_type')
-        confidence = alert.get('confidence')
+        confidence = float(alert.get('confidence', 0.0))
 
-        # Convert timestamp to proper STIX format
-        timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
-        stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        # Debug logging for extracted values
+        print(f"Extracted values: src_ip={src_ip}, dst_ip={dst_ip}, src_port={src_port}, dst_port={dst_port}, protocol={protocol}")
+        print(f"Attack type: {attack_type}, Confidence: {confidence}")
+
+        # Convert timestamp to proper STIX format with error handling
+        try:
+            if timestamp:
+                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+                stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+            stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
         current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         # Generate UUIDv5 IDs for Cyber Observable Objects
         def generate_uuidv5(name):
+            if name is None:
+                name = str(uuid.uuid4())  # Generate random UUID if name is None
             namespace = uuid.NAMESPACE_DNS
-            return str(uuid.uuid5(namespace, name))
+            return str(uuid.uuid5(namespace, str(name)))
 
         # Generate UUIDv5 for SCOs (Cyber Observable Objects)
         src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
@@ -425,6 +446,17 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
         identity_id = f"identity--{str(uuid.uuid4())}"
         observed_data_id = f"observed-data--{str(uuid.uuid4())}"
         defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
+
+        # Extract and convert flow features to proper types
+        flow_duration = int(flow_features.get('Flow Duration', 0))
+        total_fwd_packets = int(flow_features.get('Total Fwd Packet', 0))
+        total_bwd_packets = int(flow_features.get('Total Bwd packets', 0))
+        flow_bytes_per_sec = float(flow_features.get('Flow Bytes/s', 0.0))
+        flow_packets_per_sec = float(flow_features.get('Flow Packets/s', 0.0))
+
+        # Debug logging for flow features
+        print(f"Flow features: duration={flow_duration}, fwd_packets={total_fwd_packets}, bwd_packets={total_bwd_packets}")
+        print(f"Flow rates: bytes/s={flow_bytes_per_sec}, packets/s={flow_packets_per_sec}")
 
         # Create STIX bundle
         stix_bundle = {
@@ -459,12 +491,12 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                 {
                     "type": "ipv4-addr",
                     "id": src_ip_id,
-                    "value": src_ip
+                    "value": str(src_ip) if src_ip is not None else "0.0.0.0"
                 },
                 {
                     "type": "ipv4-addr",
                     "id": dst_ip_id,
-                    "value": dst_ip
+                    "value": str(dst_ip) if dst_ip is not None else "0.0.0.0"
                 },
                 {
                     "type": "network-traffic",
@@ -477,11 +509,11 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                     "extensions": {
                         "x-network-traffic-ext": {
                             "extension_type": "property-extension",
-                            "flow_duration": flow_features.get('Flow Duration'),
-                            "total_fwd_packets": flow_features.get('Total Fwd Packet'),
-                            "total_bwd_packets": flow_features.get('Total Bwd packets'),
-                            "flow_bytes_per_sec": flow_features.get('Flow Bytes/s'),
-                            "flow_packets_per_sec": flow_features.get('Flow Packets/s')
+                            "flow_duration": flow_duration,
+                            "total_fwd_packets": total_fwd_packets,
+                            "total_bwd_packets": total_bwd_packets,
+                            "flow_bytes_per_sec": flow_bytes_per_sec,
+                            "flow_packets_per_sec": flow_packets_per_sec
                         }
                     }
                 },
@@ -490,14 +522,14 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                     "id": defense_action_id,
                     "created": current_time,
                     "modified": current_time,
-                    "name": response_body.get("name", "Network Flow Analysis"),
-                    "target": response_body.get("target", src_ip),
-                    "observations": response_body.get("observations", f"Detected {attack_type}"),
-                    "source": response_body.get("source", "network-flow-analyzer"),
+                    "name": str(response_body.get("name", "Network Flow Analysis")),
+                    "target": str(response_body.get("target", src_ip)) if src_ip is not None else "0.0.0.0",
+                    "observations": str(response_body.get("observations", f"Detected {attack_type}")),
+                    "source": str(response_body.get("source", "network-flow-analyzer")),
                     "extensions": {
                         "x-defense-action-ext": {
                             "extension_type": "new-sdo",
-                            "attack_type": attack_type,
+                            "attack_type": str(attack_type) if attack_type is not None else "unknown",
                             "confidence": confidence,
                             "execution_status": "success"
                         }
@@ -506,11 +538,16 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
             ]
         }
 
+        # Debug logging for final STIX bundle
+        print("Generated STIX bundle:", json.dumps(stix_bundle, indent=2))
+
         producer.send(kafka_topic, stix_bundle)
         producer.flush()
         print(f"STIX response sent to topic '{kafka_topic}' successfully.")
     except Exception as e:
         print(f"Error producing STIX response to Kafka topic: {e}")
+        import traceback
+        print("Full traceback:", traceback.format_exc())
     finally:
         producer.close()
 
