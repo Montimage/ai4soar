@@ -62,9 +62,14 @@ def get_kafka_topic_for_scenario(scenario):
         return None, None
 
     number = scenario[2:]
-
     # Map to Kafka topics
-    kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
+    if scenario in ['sc11', 'sc31']:
+        kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
+    elif scenario in ['sc12']:
+        #kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}"
+        kafka_triage_topic = f"ai4soar.test"
+    elif scenario == 'sc33':
+        kafka_triage_topic = f"ai4deceive.sc{number[0]}.{number[1]}.mmt_alerts"
     kafka_soar_topic = f"ai4soar.sc{number[0]}.{number[1]}.responses"
 
     return kafka_triage_topic, kafka_soar_topic
@@ -78,7 +83,7 @@ def publish_alerts():
     kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
     if not kafka_triage_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
-    
+
     producer = KafkaProducer(**producer_config)
     try:
         producer.send(kafka_triage_topic, value=data)
@@ -89,14 +94,91 @@ def publish_alerts():
     finally:
         producer.close()
 
+@app.route('/publish_message_to_hm', methods=['POST'])
+def publish_message_to_hm():
+    # Retrieve the 'message' param from the query string
+    message = request.args.get('message').lower()
+    print(message)
+
+    if message not in ['start', 'stop']:
+        return jsonify({'status': 'error', 'message': 'Invalid message parameter, should be either "start" or "stop"'}), 400
+
+    # Create the payload based on the message param
+    data = {'message': message}
+    kafka_topic = "ai4soar.sc3.3.gtm"
+    # Add value_serializer to producer_config
+    producer_config['value_serializer'] = lambda v: json.dumps(v).encode('utf-8')
+
+    producer = KafkaProducer(**producer_config)
+
+    try:
+        # Publish the message as JSON to the Kafka topic
+        producer.send(kafka_topic, value=data)
+        producer.flush()
+        return jsonify({'status': 'success', 'message': f'Inform Honeypot Manager to {message} calculating a new deceive strategy'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        producer.close()
+
+# TODO: delete ?
+@app.route('/consume_deceive_strategy', methods=['GET'])
+def consume_deceive_strategy():
+    #scenario = request.args.get('scenario').lower()
+    # Get Kafka topics based on scenario
+    #kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    #kafka_topic = "ai4deceive.sc3.3.gtm"
+    kafka_topic = "ai4soar.deceive.test"
+    if not kafka_topic:
+        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
+
+    try:
+        consumer = KafkaConsumer(
+            kafka_topic,
+            bootstrap_servers=KAFKA_BROKERS,
+            security_protocol=KAFKA_SECURITY_PROTOCOL,
+            ssl_check_hostname=False,
+            ssl_cafile=KAFKA_SSL_CAFILE,
+            ssl_certfile=KAFKA_SSL_CERTFILE,
+            ssl_keyfile=KAFKA_SSL_KEYFILE,
+            ssl_password=KAFKA_SSL_PASSWORD,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            group_id=None,
+            #group_id='latest-alert-consumer-group',
+            auto_offset_reset='latest',
+            #auto_offset_reset='earliest',
+            enable_auto_commit=False
+        )
+
+        # Attempt to poll for a message with a timeout
+        # Timeout which should be equal to scheduler's interval on Shuffle
+        message = consumer.poll(timeout_ms=5000)
+
+        if message:
+            for tp, messages in message.items():
+                for msg in messages:
+                    print(f"Consumed message: {msg.value}")
+                    return jsonify({'status': 'success', 'message': msg.value}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'No messages available'}), 404
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    finally:
+        if consumer:
+            consumer.close()
+
 @app.route('/consume_alerts', methods=['GET'])
 def consume_alerts():
     scenario = request.args.get('scenario').lower()
     # Get Kafka topics based on scenario
-    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    #kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    kafka_triage_topic = "ai4soar.test"
     if not kafka_triage_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
-    
+
     try:
         consumer = KafkaConsumer(
             kafka_triage_topic,
@@ -116,7 +198,8 @@ def consume_alerts():
         )
 
         # Attempt to poll for a message with a timeout
-        message = consumer.poll(timeout_ms=5000)  # 5-second timeout
+        # Timeout which should be equal to scheduler's interval on Shuffle
+        message = consumer.poll(timeout_ms=10000)
 
         if message:
             for tp, messages in message.items():
@@ -137,7 +220,7 @@ def consume_alerts():
 def produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_topic):
     try:
         producer = KafkaProducer(**producer_config)
-        
+
         # Extract relevant fields from wazuh_alert
         agent_ip = wazuh_alert['_source']['agent']['ip']
         target_user = wazuh_alert['_source']['data']['win']['eventdata']['targetUserName']
@@ -215,22 +298,22 @@ def produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, k
     finally:
         producer.close()
 
-def produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_topic):
+# TODO: do we need response_body ???
+def produce_stix_response_with_alert_to_kafka_sc33(response_body, alert, kafka_topic):
     try:
         producer = KafkaProducer(**producer_config)
 
-        # Extract relevant fields from wazuh_alert
-        agent_ip = wazuh_alert['_source']['agent']['ip']
-        dst_user = wazuh_alert['_source']['data']['dstuser']
-        event_id = wazuh_alert['_source'].get('event', {}).get('id', str(uuid.uuid4()))
-        timestamp = wazuh_alert['_source'].get('timestamp', datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+        identity_id = f"identity--{uuid.uuid4()}"
+        first_observed = datetime.utcfromtimestamp(alert["details"]["start_t"]).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        last_observed = datetime.utcfromtimestamp(alert["details"]["end_t"]).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        timestamp_start = datetime.utcfromtimestamp(response_body["timestamp"]).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-        # Concatenate the extracted fields to form the input string
-        hash_input = f"{agent_ip}-{dst_user}-{event_id}-{timestamp}"
+        # Pre-generate UUIDs for the objects that will be referenced
+        src_ip_id = f"ipv4-addr--{uuid.uuid4()}"
+        dst_ip_id = f"ipv4-addr--{uuid.uuid4()}"
+        attack_type_id = f"x-attack-type--{uuid.uuid4()}"
 
-        # Generating the SHA-256 hash
-        sha256_hash = hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
-
+        # Generate valid STIX bundle
         stix_bundle = {
             "type": "bundle",
             "id": f"bundle--{uuid.uuid4()}",
@@ -238,52 +321,187 @@ def produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, k
                 {
                     "type": "identity",
                     "spec_version": "2.1",
-                    "id": f"identity--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "name": "Wazuh",
+                    "id": identity_id,
+                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "name": "MMT-PROBE",
                     "identity_class": "organization"
                 },
                 {
                     "type": "observed-data",
                     "spec_version": "2.1",
                     "id": f"observed-data--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "first_observed": wazuh_alert["_source"]["@timestamp"],
-                    "last_observed": wazuh_alert["_source"]["@timestamp"],
+                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "first_observed": first_observed,
+                    "last_observed": last_observed,
                     "number_observed": 1,
-                    "objects": {
-                        "0": {
-                            "type": "file",
-                            "name": wazuh_alert["_source"]["location"],
-                            "hashes": {
-                                "SHA-256": sha256_hash
-                            }
-                        },
-                        "1": {
-                            "type": "ipv4-addr",
-                            "value": wazuh_alert["_source"]["agent"]["ip"]
-                        },
-                        "2": {
-                            "type": "user-account",
-                            "user_id": wazuh_alert["_source"]["data"]["dstuser"]
+                    "object_refs": [
+                        src_ip_id,
+                        dst_ip_id,
+                        attack_type_id
+                    ],
+                    "created_by_ref": identity_id
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": src_ip_id,
+                    "value": alert["details"]["src_ip"]
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": dst_ip_id,
+                    "value": alert["details"]["dst_ip"]
+                },
+                {
+                    "type": "x-attack-type",
+                    "id": attack_type_id,
+                    "user_id": alert["details"]["type"],
+                    "extensions": {
+                        "x-attack-type-ext": {
+                            "extension_type": "new-sdo"
                         }
-                    },
-                    "created_by_ref": f"identity--{uuid.uuid4()}"
+                    }
                 },
                 {
                     "type": "x-defense-action",
                     "id": f"x-defense-action--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "name": response_body["name"],
-                    "ability_id": response_body["ability_id"],
-                    "target": response_body["target"],
-                    "observations": response_body["observations"],
-                    "health": response_body["health"],
-                    "source": response_body["source"],
-                    "execution_status": "success"  # Assuming execution is successful
+                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "alert_id": alert["details"]["id"],
+                    "honeypot_type": "gustavojodar/rdpy-docker:v1.0",  # hardcoded for now
+                    "execution_status": "success",
+                    "extensions": {
+                        "x-defense-action-ext": {
+                            "extension_type": "new-sdo",
+                            "action_taken": "honeypot running"
+                        }
+                    }
+                }
+            ]
+        }
+
+        # Send the STIX bundle to Kafka topic
+        producer.send(kafka_topic, value=stix_bundle)
+        producer.flush()
+        print(f"STIX response sent to topic '{kafka_topic}' successfully.")
+
+    except Exception as e:
+        print(f"Error producing STIX response to Kafka topic: {e}")
+    finally:
+        producer.close()
+
+def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_topic):
+    try:
+        producer = KafkaProducer(**producer_config)
+
+        # Extract relevant fields from alert
+        flow_features = alert.get('flow_features', {})
+        src_ip = flow_features.get('Src IP')
+        dst_ip = flow_features.get('Dst IP')
+        src_port = flow_features.get('Src Port')
+        dst_port = flow_features.get('Dst Port')
+        protocol = flow_features.get('Protocol')
+        timestamp = flow_features.get('Timestamp')
+        attack_type = alert.get('attack_type')
+        confidence = alert.get('confidence')
+
+        # Convert timestamp to proper STIX format
+        timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+        stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        # Generate UUIDv5 IDs for Cyber Observable Objects
+        def generate_uuidv5(name):
+            namespace = uuid.NAMESPACE_DNS
+            return str(uuid.uuid5(namespace, name))
+
+        # Generate UUIDv5 for SCOs (Cyber Observable Objects)
+        src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
+        dst_ip_id = f"ipv4-addr--{generate_uuidv5(dst_ip)}"
+        network_traffic_id = f"network-traffic--{generate_uuidv5(f'{src_ip}-{dst_ip}-{src_port}-{dst_port}')}"
+
+        # Generate UUIDv4 for other objects
+        identity_id = f"identity--{str(uuid.uuid4())}"
+        observed_data_id = f"observed-data--{str(uuid.uuid4())}"
+        defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
+
+        # Create STIX bundle
+        stix_bundle = {
+            "type": "bundle",
+            "id": f"bundle--{str(uuid.uuid4())}",
+            "objects": [
+                {
+                    "type": "identity",
+                    "spec_version": "2.1",
+                    "id": identity_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": "Network Flow Analyzer",
+                    "identity_class": "organization"
+                },
+                {
+                    "type": "observed-data",
+                    "spec_version": "2.1",
+                    "id": observed_data_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "first_observed": stix_timestamp,
+                    "last_observed": stix_timestamp,
+                    "number_observed": 1,
+                    "object_refs": [
+                        src_ip_id,
+                        dst_ip_id,
+                        network_traffic_id
+                    ],
+                    "created_by_ref": identity_id
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": src_ip_id,
+                    "value": src_ip
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": dst_ip_id,
+                    "value": dst_ip
+                },
+                {
+                    "type": "network-traffic",
+                    "id": network_traffic_id,
+                    "src_ref": src_ip_id,
+                    "dst_ref": dst_ip_id,
+                    "src_port": src_port,
+                    "dst_port": dst_port,
+                    "protocols": ["ipv4", "udp" if protocol == 17 else "tcp"],
+                    "extensions": {
+                        "x-network-traffic-ext": {
+                            "extension_type": "property-extension",
+                            "flow_duration": flow_features.get('Flow Duration'),
+                            "total_fwd_packets": flow_features.get('Total Fwd Packet'),
+                            "total_bwd_packets": flow_features.get('Total Bwd packets'),
+                            "flow_bytes_per_sec": flow_features.get('Flow Bytes/s'),
+                            "flow_packets_per_sec": flow_features.get('Flow Packets/s')
+                        }
+                    }
+                },
+                {
+                    "type": "x-defense-action",
+                    "id": defense_action_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": response_body.get("name", "Network Flow Analysis"),
+                    "target": response_body.get("target", src_ip),
+                    "observations": response_body.get("observations", f"Detected {attack_type}"),
+                    "source": response_body.get("source", "network-flow-analyzer"),
+                    "extensions": {
+                        "x-defense-action-ext": {
+                            "extension_type": "new-sdo",
+                            "attack_type": attack_type,
+                            "confidence": confidence,
+                            "execution_status": "success"
+                        }
+                    }
                 }
             ]
         }
@@ -295,45 +513,6 @@ def produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, k
         print(f"Error producing STIX response to Kafka topic: {e}")
     finally:
         producer.close()
-"""
-@app.route('/publish_responses_with_alert_stix', methods=['POST'])
-def publish_responses_with_alert_stix():
-    scenario = request.args.get('scenario').lower()
-    # Get Kafka topics based on scenario
-    _, kafka_soar_topic = get_kafka_topic_for_scenario(scenario)
-    if not kafka_soar_topic:
-        return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
-    
-    try:
-        # Check if the file is in the request
-        if 'wazuh_alert_file' not in request.files:
-            return jsonify({"status": "error", "message": "Missing wazuh_alert_file in the request."}), 400
-
-        # Get the file from the request
-        file = request.files['wazuh_alert_file']
-
-        # Ensure the file is a valid JSON file
-        try:
-            wazuh_alert = json.load(file)
-            print(wazuh_alert)
-        except json.JSONDecodeError:
-            return jsonify({"status": "error", "message": "Invalid JSON file."}), 400
-
-        response_body = request.form.get('response_body')
-        if response_body:
-            response_body = json.loads(response_body)  # Convert JSON string to dict
-        else:
-            return jsonify({"status": "error", "message": "Missing response_body in the request."}), 400
-
-        #produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_soar_topic)
-        produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
-        return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
-    except KeyError as e:
-        return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
-"""
-
 
 @app.route('/publish_responses_with_alert_stix', methods=['POST'])
 def publish_responses_with_alert_stix():
@@ -357,8 +536,15 @@ def publish_responses_with_alert_stix():
             wazuh_alert = json.loads(wazuh_alert)
         else:
             return jsonify({"status": "error", "message": "Missing wazuh_alert in the request."}), 400
-        
-        produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
+
+        if scenario == 'sc11':
+            produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_soar_topic)
+        elif scenario == 'sc12':
+            produce_stix_response_with_alert_to_kafka_sc12(response_body, wazuh_alert, kafka_soar_topic)
+        elif scenario == 'sc31':
+            produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
+        elif scenario == 'sc33':
+            produce_stix_response_with_alert_to_kafka_sc33(response_body, wazuh_alert, kafka_soar_topic)
         return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
     except KeyError as e:
         return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
@@ -371,11 +557,11 @@ def execute_ability_api():
     try:
         ability_id = request.form.get('ability_id')
         target = request.form.get('target')
-        
+
         # If ability_id is empty and target is not empty, consider it as a no-op
         if ability_id == "" and target != "":
             return jsonify({'message': 'No action taken as ability_id is empty and target is provided.'}), 200
-        
+
         # If both ability_id and target are provided, execute the ability
         if ability_id and target:
             response = execute_ability(ability_id, target)
