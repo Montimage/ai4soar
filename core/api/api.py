@@ -66,8 +66,9 @@ def get_kafka_topic_for_scenario(scenario):
     if scenario in ['sc11', 'sc31']:
         kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
     elif scenario in ['sc12']:
-        #kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}"
-        kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}.test"
+        #kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
+        #kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}.test"
+        kafka_triage_topic = f"ai4triage.sc1.1.alerts" # TODO: change
     elif scenario == 'sc33':
         kafka_triage_topic = f"ai4deceive.sc{number[0]}.{number[1]}.mmt_alerts"
     kafka_soar_topic = f"ai4soar.sc{number[0]}.{number[1]}.responses"
@@ -216,84 +217,182 @@ def consume_alerts():
         if consumer:
             consumer.close()
 
-def produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_topic):
+def produce_stix_response_with_alert_to_kafka_sc11(response_body, stix_alert, kafka_topic):
     try:
         producer = KafkaProducer(**producer_config)
 
-        # Extract relevant fields from wazuh_alert
-        agent_ip = wazuh_alert['_source']['agent']['ip']
-        target_user = wazuh_alert['_source']['data']['win']['eventdata']['targetUserName']
-        event_id = wazuh_alert['_source']['data']['win']['system']['eventID']
-        timestamp = wazuh_alert['_source'].get('@timestamp', datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+        # Extract information from the original STIX alert
+        alert_id = stix_alert.get('id')
+        alert_name = stix_alert.get('name')
+        alert_description = stix_alert.get('description')
+        alert_types = stix_alert.get('indicator_types', [])
+        alert_pattern = stix_alert.get('pattern')
+        alert_labels = stix_alert.get('labels', [])
+        alert_external_refs = stix_alert.get('external_references', [])
 
-        # Concatenate the extracted fields to form the input string
-        hash_input = f"{agent_ip}-{target_user}-{event_id}-{timestamp}"
+        # Extract attack type and confidence from custom fields
+        custom = stix_alert.get('custom', {})
+        attack_type = custom.get('x-attack-type')
+        confidence = float(custom.get('confidence', 0.0))
 
-        # Generating the SHA-256 hash
-        sha256_hash = hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
+        # Extract flow features from the STIX alert
+        flow_features = custom.get('x-flow-features', {})
 
+        # Extract network traffic information
+        src_ip = flow_features.get('Src IP')
+        dst_ip = flow_features.get('Dst IP')
+        src_port = int(flow_features.get('Src Port', 0))
+        dst_port = int(flow_features.get('Dst Port', 0))
+        protocol = int(flow_features.get('Protocol', 0))
+        timestamp = flow_features.get('Timestamp')
+
+        # Convert timestamp to proper STIX format
+        try:
+            if timestamp:
+                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+                stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+            stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        # Generate UUIDv5 for Cyber Observable Objects (SCOs)
+        def generate_uuidv5(name):
+            if name is None:
+                name = str(uuid.uuid4())  # Generate random UUID if name is None
+            namespace = uuid.NAMESPACE_DNS
+            return str(uuid.uuid5(namespace, str(name)))
+
+        # Generate UUIDv5 for SCOs
+        src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
+        dst_ip_id = f"ipv4-addr--{generate_uuidv5(dst_ip)}"
+        network_traffic_id = f"network-traffic--{generate_uuidv5(f'{src_ip}-{dst_ip}-{src_port}-{dst_port}')}"
+
+        # Generate UUIDv4 for other objects
+        identity_id = f"identity--{str(uuid.uuid4())}"
+        observed_data_id = f"observed-data--{str(uuid.uuid4())}"
+        defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
+
+        # Process response_body observations
+        observations = response_body.get('observations', [])
+        if isinstance(observations, list):
+            observations_str = ", ".join(map(str, observations))
+        else:
+            observations_str = str(observations)
+
+        # Create STIX bundle
         stix_bundle = {
             "type": "bundle",
-            "id": f"bundle--{uuid.uuid4()}",
+            "id": f"bundle--{str(uuid.uuid4())}",
             "objects": [
                 {
                     "type": "identity",
                     "spec_version": "2.1",
-                    "id": f"identity--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "name": "Wazuh",
+                    "id": identity_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": "Network Flow Analyzer",
                     "identity_class": "organization"
                 },
                 {
                     "type": "observed-data",
                     "spec_version": "2.1",
-                    "id": f"observed-data--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "first_observed": wazuh_alert["_source"]["@timestamp"],
-                    "last_observed": wazuh_alert["_source"]["@timestamp"],
+                    "id": observed_data_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "first_observed": stix_timestamp,
+                    "last_observed": stix_timestamp,
                     "number_observed": 1,
-                    "objects": {
-                        "0": {
-                            "type": "file",
-                            "name": wazuh_alert["_source"]["location"],
-                            "hashes": {
-                                "SHA-256": sha256_hash
-                            }
-                        },
-                        "1": {
-                            "type": "ipv4-addr",
-                            "value": wazuh_alert["_source"]["agent"]["ip"]
-                        },
-                        "2": {
-                            "type": "user-account",
-                            "user_id": target_user
+                    "object_refs": [
+                        src_ip_id,
+                        dst_ip_id,
+                        network_traffic_id
+                    ],
+                    "created_by_ref": identity_id,
+                    "extensions": {
+                        "x-observed-data-ext": {
+                            "extension_type": "property-extension",
+                            "description": alert_description
                         }
-                    },
-                    "created_by_ref": f"identity--{uuid.uuid4()}"
+                    }
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": src_ip_id,
+                    "value": str(src_ip) if src_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": dst_ip_id,
+                    "value": str(dst_ip) if dst_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "network-traffic",
+                    "id": network_traffic_id,
+                    "src_ref": src_ip_id,
+                    "dst_ref": dst_ip_id,
+                    "src_port": src_port,
+                    "dst_port": dst_port,
+                    "protocols": ["ipv4", "udp" if protocol == 17 else "tcp"],
+                    "extensions": {
+                        "x-network-traffic-ext": {
+                            "extension_type": "property-extension",
+                            "flow_duration": flow_features.get('Flow Duration', 0),
+                            "total_fwd_packets": flow_features.get('Total Fwd Packet', 0),
+                            "total_bwd_packets": flow_features.get('Total Bwd packets', 0),
+                            "total_length_fwd": flow_features.get('Total Length of Fwd Packet', 0.0),
+                            "total_length_bwd": flow_features.get('Total Length of Bwd Packet', 0.0),
+                            "flow_bytes_per_sec": flow_features.get('Flow Bytes/s', 0.0),
+                            "flow_packets_per_sec": flow_features.get('Flow Packets/s', 0.0),
+                            "flow_iat_mean": flow_features.get('Flow IAT Mean', 0.0),
+                            "flow_iat_std": flow_features.get('Flow IAT Std', 0.0)
+                        }
+                    }
                 },
                 {
                     "type": "x-defense-action",
-                    "id": f"x-defense-action--{uuid.uuid4()}",
-                    "created": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "modified": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "name": response_body["name"],
-                    "ability_id": response_body["ability_id"],
-                    "target": response_body["target"],
-                    "observations": response_body["observations"],
-                    "health": response_body["health"],
-                    "source": response_body["source"],
-                    "execution_status": "success"  # Assuming execution is successful
+                    "id": defense_action_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": str(response_body.get("name", "No Action")),
+                    "target": str(response_body.get("target", "unknown")),
+                    "source": str(response_body.get("source", "network-flow-analyzer")),
+                    "extensions": {
+                        "x-defense-action-ext": {
+                            "extension_type": "new-sdo",
+                            "attack_type": str(attack_type) if attack_type is not None else "unknown",
+                            "confidence": confidence,
+                            "execution_status": "success",
+                            "original_alert_id": alert_id,
+                            "alert_types": alert_types,
+                            "alert_pattern": alert_pattern,
+                            "alert_labels": alert_labels,
+                            "external_references": alert_external_refs,
+                            "recommendation": {
+                                "position": response_body.get("pos"),
+                                "ability_id": response_body.get("ability_id"),
+                                "health": response_body.get("health"),
+                                "observations": response_body.get("observations", [])
+                            }
+                        }
+                    }
                 }
             ]
         }
+
+        # Debug logging
+        print("Generated STIX bundle:", json.dumps(stix_bundle, indent=2))
 
         producer.send(kafka_topic, stix_bundle)
         producer.flush()
         print(f"STIX response sent to topic '{kafka_topic}' successfully.")
     except Exception as e:
         print(f"Error producing STIX response to Kafka topic: {e}")
+        import traceback
+        print("Full traceback:", traceback.format_exc())
     finally:
         producer.close()
 
@@ -522,9 +621,8 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                     "id": defense_action_id,
                     "created": current_time,
                     "modified": current_time,
-                    "name": str(response_body.get("name", "Network Flow Analysis")),
-                    "target": str(response_body.get("target", src_ip)) if src_ip is not None else "0.0.0.0",
-                    "observations": str(response_body.get("observations", f"Detected {attack_type}")),
+                    "name": str(response_body.get("name", "No Action")),
+                    "target": str(response_body.get("target", "unknown")),
                     "source": str(response_body.get("source", "network-flow-analyzer")),
                     "extensions": {
                         "x-defense-action-ext": {
@@ -560,32 +658,54 @@ def publish_responses_with_alert_stix():
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
     try:
+        # Debug logging for request data
+        print("Request form data:", request.form)
+        print("Request files:", request.files)
+
         response_body = request.form.get('response_body')
-        print(response_body)
+        print("Response body:", response_body)
         if response_body:
             response_body = json.loads(response_body)
         else:
             return jsonify({"status": "error", "message": "Missing response_body in the request."}), 400
 
-        wazuh_alert = request.form.get('wazuh_alert')
-        print(wazuh_alert)
-        if wazuh_alert:
-            wazuh_alert = json.loads(wazuh_alert)
-        else:
-            return jsonify({"status": "error", "message": "Missing wazuh_alert in the request."}), 400
+        # Handle triaged_alert from either file upload or direct JSON string
+        triaged_alert = None
+        if 'triaged_alert' in request.files:
+            file = request.files['triaged_alert']
+            if file:
+                try:
+                    triaged_alert = json.loads(file.read().decode('utf-8'))
+                    print("Successfully read triaged_alert from file")
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding triaged_alert JSON from file: {e}")
+                    return jsonify({"status": "error", "message": f"Invalid JSON in triaged_alert file: {str(e)}"}), 400
+        elif 'triaged_alert' in request.form:
+            try:
+                triaged_alert = json.loads(request.form['triaged_alert'])
+                print("Successfully read triaged_alert from form data")
+            except json.JSONDecodeError as e:
+                print(f"Error decoding triaged_alert JSON from form data: {e}")
+                return jsonify({"status": "error", "message": f"Invalid JSON in triaged_alert form data: {str(e)}"}), 400
+
+        if not triaged_alert:
+            return jsonify({"status": "error", "message": "No valid triaged_alert provided"}), 400
 
         if scenario == 'sc11':
-            produce_stix_response_with_alert_to_kafka_sc11(response_body, wazuh_alert, kafka_soar_topic)
+            produce_stix_response_with_alert_to_kafka_sc11(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc12':
-            produce_stix_response_with_alert_to_kafka_sc12(response_body, wazuh_alert, kafka_soar_topic)
+            produce_stix_response_with_alert_to_kafka_sc11(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc31':
-            produce_stix_response_with_alert_to_kafka_sc31(response_body, wazuh_alert, kafka_soar_topic)
+            produce_stix_response_with_alert_to_kafka_sc31(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc33':
-            produce_stix_response_with_alert_to_kafka_sc33(response_body, wazuh_alert, kafka_soar_topic)
+            produce_stix_response_with_alert_to_kafka_sc33(response_body, triaged_alert, kafka_soar_topic)
         return jsonify({"status": "success", "message": "STIX response sent to Kafka topic successfully."}), 200
     except KeyError as e:
         return jsonify({"status": "error", "message": f"Missing parameter: {str(e)}"}), 400
     except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        import traceback
+        print("Full traceback:", traceback.format_exc())
         return jsonify({"status": "error", "message": f"An error occurred: {str(e)}"}), 500
 
 # Execute Caldera blue agent
