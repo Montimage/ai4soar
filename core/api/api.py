@@ -17,6 +17,11 @@ from core.playbook_consumer.wazuh import fetch_alerts
 #from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
+from core.playbook_verification.verifier import PlaybookVerifier
+from dotenv import load_dotenv
+
+load_dotenv()
+KAFKA_SSL_PASSWORD = os.environ.get('KAFKA_SSL_PASSWORD')
 
 app = Flask(__name__)
 
@@ -26,7 +31,6 @@ KAFKA_SECURITY_PROTOCOL = 'SSL'
 KAFKA_SSL_CAFILE = '/home/user/kafka_certs/ai4soar_CARoot.pem'
 KAFKA_SSL_CERTFILE = '/home/user/kafka_certs/ai4soar_certificate.pem'
 KAFKA_SSL_KEYFILE = '/home/user/kafka_certs/ai4soar_RSAkey.pem'
-KAFKA_SSL_PASSWORD = '4XpUglfq9x5b'
 
 # Retrieve recent Wazuh's alerts with the specified characteristics
 @app.route('/fetch_alerts', methods=['GET'])
@@ -59,21 +63,29 @@ producer_config = {
 def get_kafka_topic_for_scenario(scenario):
     valid_scenarios = ['sc11', 'sc12', 'sc13', 'sc21', 'sc22', 'sc23', 'sc31', 'sc32', 'sc33']
     if scenario.lower() not in valid_scenarios:
-        return None, None
+        return None, None, None
 
     number = scenario[2:]
     # Map to Kafka topics
     if scenario in ['sc11', 'sc31']:
-        kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
+        kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.stix_alerts"
     elif scenario in ['sc12']:
-        #kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.alerts"
-        #kafka_triage_topic = f"ai4fids.sc{number[0]}.{number[1]}.test"
-        kafka_triage_topic = f"ai4triage.sc1.1.alerts" # TODO: change
+        #kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.stix_alerts"
+        kafka_triage_topic = f"ai4triage.sc1.2.stix_alerts" # TODO: change
+    elif scenario in ['sc13']:
+        kafka_triage_topic = f"ai4triage.sc{number[0]}.{number[1]}.stix_alerts"
     elif scenario == 'sc33':
         kafka_triage_topic = f"ai4deceive.sc{number[0]}.{number[1]}.mmt_alerts"
     kafka_soar_topic = f"ai4soar.sc{number[0]}.{number[1]}.responses"
 
-    return kafka_triage_topic, kafka_soar_topic
+    # Add kafka_deceive_topic for sc13
+    kafka_deceive_topic = None
+    if scenario == 'sc13':
+        kafka_deceive_topic = "ai4soar.sc1.3.gtm"
+    elif scenario == 'sc33':
+        kafka_deceive_topic = "ai4soar.sc3.3.gtm"
+
+    return kafka_triage_topic, kafka_soar_topic, kafka_deceive_topic
 
 @app.route('/publish_alerts', methods=['POST'])
 def publish_alerts():
@@ -81,7 +93,7 @@ def publish_alerts():
     scenario = request.args.get('scenario').lower()
 
     # Get Kafka topics based on scenario
-    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    kafka_triage_topic, _, _ = get_kafka_topic_for_scenario(scenario)
     if not kafka_triage_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
@@ -98,7 +110,11 @@ def publish_alerts():
 @app.route('/publish_message_to_hm', methods=['POST'])
 def publish_message_to_hm():
     # Retrieve the 'message' param from the query string
-    message = request.args.get('message').lower()
+    message = request.args.get('message')
+    if not message:
+        return jsonify({'status': 'error', 'message': 'Missing message parameter'}), 400
+    message = message.lower()
+    scenario = request.args.get('scenario')
     print(message)
 
     if message not in ['start', 'stop']:
@@ -106,7 +122,9 @@ def publish_message_to_hm():
 
     # Create the payload based on the message param
     data = {'message': message}
-    kafka_topic = "ai4soar.sc3.3.gtm"
+    # Get kafka_deceive_topic from get_kafka_topic_for_scenario
+    _, _, kafka_deceive_topic = get_kafka_topic_for_scenario(scenario) if scenario else (None, None, None)
+    kafka_topic = kafka_deceive_topic if kafka_deceive_topic else "ai4soar.sc1.3.gtm"
     # Add value_serializer to producer_config
     producer_config['value_serializer'] = lambda v: json.dumps(v).encode('utf-8')
 
@@ -175,7 +193,7 @@ def consume_deceive_strategy():
 def consume_alerts():
     scenario = request.args.get('scenario').lower()
     # Get Kafka topics based on scenario
-    kafka_triage_topic, _ = get_kafka_topic_for_scenario(scenario)
+    kafka_triage_topic, _, _ = get_kafka_topic_for_scenario(scenario)
     if not kafka_triage_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
@@ -190,10 +208,10 @@ def consume_alerts():
             ssl_keyfile=KAFKA_SSL_KEYFILE,
             ssl_password=KAFKA_SSL_PASSWORD,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            group_id=None,
+            #group_id='ai4cyber.ai4soar',
             #group_id='latest-alert-consumer-group',
-            #auto_offset_reset='latest',
-            auto_offset_reset='earliest',
+            auto_offset_reset='latest',
+            #auto_offset_reset='earliest',
             enable_auto_commit=False
         )
 
@@ -315,7 +333,7 @@ def produce_stix_response_with_alert_to_kafka_sc11(response_body, stix_alert, ka
                     "extensions": {
                         "x-observed-data-ext": {
                             "extension_type": "property-extension",
-                            "description": alert_description
+                            "description": alert_description if alert_description is not None else "Network traffic observation"
                         }
                     }
                 },
@@ -497,67 +515,129 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
         print("Received alert:", json.dumps(alert, indent=2))
         print("Received response_body:", json.dumps(response_body, indent=2))
 
-        # Extract relevant fields from alert
-        flow_features = alert.get('flow_features', {})
+        # --- Extract flow features (support both old and new formats) ---
+        flow_features = alert.get('flow_features')
+        if not flow_features and 'custom' in alert and 'x-flow-features' in alert['custom']:
+            flow_features = alert['custom']['x-flow-features']
         if not flow_features:
             print("Warning: No flow_features found in alert")
             flow_features = {}
 
-        src_ip = flow_features.get('Src IP')
-        dst_ip = flow_features.get('Dst IP')
-        src_port = int(flow_features.get('Src Port', 0))
-        dst_port = int(flow_features.get('Dst Port', 0))
-        protocol = int(flow_features.get('Protocol', 0))
-        timestamp = flow_features.get('Timestamp')
-        attack_type = alert.get('attack_type')
-        confidence = float(alert.get('confidence', 0.0))
+        # Map new format keys to old format for internal use
+        def get_feature(*keys, default=None):
+            for k in keys:
+                if k in flow_features:
+                    return flow_features[k]
+            return default
 
-        # Debug logging for extracted values
-        print(f"Extracted values: src_ip={src_ip}, dst_ip={dst_ip}, src_port={src_port}, dst_port={dst_port}, protocol={protocol}")
-        print(f"Attack type: {attack_type}, Confidence: {confidence}")
+        # Try to extract src/dst IP and ports from both formats
+        src_ip = get_feature('Src IP', 'ip_src')
+        dst_ip = get_feature('Dst IP', 'ip_dst')
+        src_port = get_feature('Src Port', 'udp_sport', 'src_port')
+        dst_port = get_feature('Dst Port', 'udp_dport', 'dst_port')
+        protocol = get_feature('Protocol')
+        timestamp = get_feature('Timestamp', 'flow_start_timestamp')
 
-        # Convert timestamp to proper STIX format with error handling
+        # Convert ports and protocol to int if possible
         try:
-            if timestamp:
-                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
-                stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            src_port = int(src_port) if src_port is not None else 0
+        except Exception:
+            src_port = 0
+        try:
+            dst_port = int(dst_port) if dst_port is not None else 0
+        except Exception:
+            dst_port = 0
+        try:
+            protocol = int(protocol) if protocol is not None else None
+        except Exception:
+            protocol = None
+
+        # --- Protocol fallback: parse from pattern if not present ---
+        if protocol is None:
+            pattern = alert.get('pattern', '')
+            if "protocols[*] = 'udp'" in pattern:
+                protocol = 17
+            elif "protocols[*] = 'tcp'" in pattern:
+                protocol = 6
             else:
-                stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        except (ValueError, TypeError) as e:
-            print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+                protocol = 0
+
+        # --- Extract attack_type and confidence ---
+        attack_type = alert.get('attack_type')
+        confidence = alert.get('confidence', None)
+        if attack_type is None and 'custom' in alert:
+            attack_type = alert['custom'].get('x-attack-type')
+        if confidence is None and 'custom' in alert:
+            confidence = alert['custom'].get('confidence', 0.0)
+        confidence = float(confidence) if confidence is not None else 0.0
+
+        # --- Extract alert_description ---
+        alert_description = alert.get('description', None)
+
+        # --- Timestamp handling ---
+        stix_timestamp = None
+        # Try to use valid_from if present
+        valid_from = alert.get('valid_from')
+        if valid_from:
+            try:
+                stix_timestamp = datetime.strptime(valid_from, "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            except Exception:
+                try:
+                    stix_timestamp = datetime.strptime(valid_from, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                except Exception:
+                    stix_timestamp = None
+        # If not, try to use timestamp/flow_start_timestamp
+        if not stix_timestamp and timestamp:
+            try:
+                # If it's a float or int nanoseconds, convert to datetime
+                if isinstance(timestamp, (int, float)):
+                    # nanoseconds to seconds
+                    ts_sec = float(timestamp) / 1e9 if float(timestamp) > 1e12 else float(timestamp)
+                    stix_timestamp = datetime.utcfromtimestamp(ts_sec).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                else:
+                    stix_timestamp = datetime.strptime(str(timestamp), "%Y-%m-%d %H:%M:%S.%f").strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            except Exception as e:
+                print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+                stix_timestamp = None
+        # Fallback to now
+        if not stix_timestamp:
             stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-        # Generate UUIDv5 IDs for Cyber Observable Objects
+        # --- UUID helpers ---
         def generate_uuidv5(name):
             if name is None:
-                name = str(uuid.uuid4())  # Generate random UUID if name is None
+                name = str(uuid.uuid4())
             namespace = uuid.NAMESPACE_DNS
             return str(uuid.uuid5(namespace, str(name)))
 
-        # Generate UUIDv5 for SCOs (Cyber Observable Objects)
         src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
         dst_ip_id = f"ipv4-addr--{generate_uuidv5(dst_ip)}"
         network_traffic_id = f"network-traffic--{generate_uuidv5(f'{src_ip}-{dst_ip}-{src_port}-{dst_port}')}"
-
-        # Generate UUIDv4 for other objects
         identity_id = f"identity--{str(uuid.uuid4())}"
         observed_data_id = f"observed-data--{str(uuid.uuid4())}"
         defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
 
-        # Extract and convert flow features to proper types
-        flow_duration = int(flow_features.get('Flow Duration', 0))
-        total_fwd_packets = int(flow_features.get('Total Fwd Packet', 0))
-        total_bwd_packets = int(flow_features.get('Total Bwd packets', 0))
-        flow_bytes_per_sec = float(flow_features.get('Flow Bytes/s', 0.0))
-        flow_packets_per_sec = float(flow_features.get('Flow Packets/s', 0.0))
+        # --- Extract and convert flow features to proper types (robustly) ---
+        def safe_int(val, default=0):
+            try:
+                return int(val)
+            except Exception:
+                return default
+        def safe_float(val, default=0.0):
+            try:
+                return float(val)
+            except Exception:
+                return default
 
-        # Debug logging for flow features
-        print(f"Flow features: duration={flow_duration}, fwd_packets={total_fwd_packets}, bwd_packets={total_bwd_packets}")
-        print(f"Flow rates: bytes/s={flow_bytes_per_sec}, packets/s={flow_packets_per_sec}")
+        flow_duration = safe_float(get_feature('Flow Duration', 'flow_duration'))
+        total_fwd_packets = safe_int(get_feature('Total Fwd Packet', 'flow_packets_count', 'total_fw_packets'))
+        total_bwd_packets = safe_int(get_feature('Total Bwd packets', 'total_bw_packets'))
+        flow_bytes_per_sec = safe_float(get_feature('Flow Bytes/s', 'flow_knxip_bps', 'flow_websocket_bytes_per_second'))
+        flow_packets_per_sec = safe_float(get_feature('Flow Packets/s', 'flow_knxip_pps', 'flow_websocket_packts_per_second'))
 
-        # Create STIX bundle
+        # --- Create STIX bundle ---
         stix_bundle = {
             "type": "bundle",
             "id": f"bundle--{str(uuid.uuid4())}",
@@ -568,7 +648,7 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                     "id": identity_id,
                     "created": current_time,
                     "modified": current_time,
-                    "name": "Network Flow Analyzer",
+                    "name": "AI4FIDS",
                     "identity_class": "organization"
                 },
                 {
@@ -585,7 +665,13 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                         dst_ip_id,
                         network_traffic_id
                     ],
-                    "created_by_ref": identity_id
+                    "created_by_ref": identity_id,
+                    "extensions": {
+                        "x-observed-data-ext": {
+                            "extension_type": "property-extension",
+                            "description": alert_description if alert_description is not None else "Network traffic observation"
+                        }
+                    }
                 },
                 {
                     "type": "ipv4-addr",
@@ -621,9 +707,7 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
                     "id": defense_action_id,
                     "created": current_time,
                     "modified": current_time,
-                    "name": str(response_body.get("name", "No Action")),
-                    "target": str(response_body.get("target", "unknown")),
-                    "source": str(response_body.get("source", "network-flow-analyzer")),
+                    "name": "Add a custom flow",
                     "extensions": {
                         "x-defense-action-ext": {
                             "extension_type": "new-sdo",
@@ -649,11 +733,360 @@ def produce_stix_response_with_alert_to_kafka_sc12(response_body, alert, kafka_t
     finally:
         producer.close()
 
+def produce_stix_response_with_alert_to_kafka_sc13(response_body, alert, kafka_topic):
+    try:
+        producer = KafkaProducer(**producer_config)
+
+        print("Received alert:", json.dumps(alert, indent=2))
+        print("Received response_body:", json.dumps(response_body, indent=2))
+
+        # Extract flow features from STIX indicator alert
+        custom = alert.get('custom', {})
+        flow_features = custom.get('x-flow-features', {})
+
+        src_ip = flow_features.get('src_ip')
+        dst_ip = flow_features.get('dst_ip')
+        src_port = int(flow_features.get('src_port', 0))
+        dst_port = int(flow_features.get('dst_port', 0))
+        protocol = 6  # Default to TCP
+        # Try to extract protocol from pattern if possible
+        pattern = alert.get('pattern', '')
+        if 'protocols[*] = \'tcp\'' in pattern:
+            protocol = 6
+        elif 'protocols[*] = \'udp\'' in pattern:
+            protocol = 17
+
+        # Extract attack_type and confidence
+        attack_type = custom.get('x-attack-type', alert.get('attack_type', 'unknown'))
+        confidence = float(custom.get('confidence', alert.get('confidence', 0.0)))
+
+        alert_description = alert.get('description', None)
+        alert_name = alert.get('name', None)
+        alert_types = alert.get('indicator_types', [])
+        alert_labels = alert.get('labels', [])
+        alert_external_refs = alert.get('external_references', [])
+        alert_pattern = alert.get('pattern', None)
+
+        # Use valid_from as timestamp if available
+        timestamp = alert.get('valid_from')
+        try:
+            if timestamp:
+                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ")
+                stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+            stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        def generate_uuidv5(name):
+            if name is None:
+                name = str(uuid.uuid4())
+            namespace = uuid.NAMESPACE_DNS
+            return str(uuid.uuid5(namespace, str(name)))
+
+        src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
+        dst_ip_id = f"ipv4-addr--{generate_uuidv5(dst_ip)}"
+        network_traffic_id = f"network-traffic--{generate_uuidv5(f'{src_ip}-{dst_ip}-{src_port}-{dst_port}')}"
+
+        identity_id = f"identity--{str(uuid.uuid4())}"
+        observed_data_id = f"observed-data--{str(uuid.uuid4())}"
+        defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
+
+        # Extract additional flow features if available
+        flow_duration = int(flow_features.get('flow_duration', 0))
+        total_fwd_packets = int(flow_features.get('total_fw_packets', 0))
+        total_bwd_packets = int(flow_features.get('total_bw_packets', 0))
+        flow_bytes_per_sec = float(flow_features.get('flow_websocket_bytes_per_second', 0.0))
+        flow_packets_per_sec = float(flow_features.get('flow_websocket_packts_per_second', 0.0))
+
+        stix_bundle = {
+            "type": "bundle",
+            "id": f"bundle--{str(uuid.uuid4())}",
+            "objects": [
+                {
+                    "type": "identity",
+                    "spec_version": "2.1",
+                    "id": identity_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": "AI4FIDS",
+                    "identity_class": "organization"
+                },
+                {
+                    "type": "observed-data",
+                    "spec_version": "2.1",
+                    "id": observed_data_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "first_observed": stix_timestamp,
+                    "last_observed": stix_timestamp,
+                    "number_observed": 1,
+                    "object_refs": [
+                        src_ip_id,
+                        dst_ip_id,
+                        network_traffic_id
+                    ],
+                    "created_by_ref": identity_id,
+                    "extensions": {
+                        "x-observed-data-ext": {
+                            "extension_type": "property-extension",
+                            "description": alert_description if alert_description is not None else "Network traffic observation"
+                        }
+                    }
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": src_ip_id,
+                    "value": str(src_ip) if src_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": dst_ip_id,
+                    "value": str(dst_ip) if dst_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "network-traffic",
+                    "id": network_traffic_id,
+                    "src_ref": src_ip_id,
+                    "dst_ref": dst_ip_id,
+                    "src_port": src_port,
+                    "dst_port": dst_port,
+                    "protocols": ["ipv4", "udp" if protocol == 17 else "tcp"],
+                    "extensions": {
+                        "x-network-traffic-ext": {
+                            "extension_type": "property-extension",
+                            "flow_duration": flow_duration,
+                            "total_fwd_packets": total_fwd_packets,
+                            "total_bwd_packets": total_bwd_packets,
+                            "flow_bytes_per_sec": flow_bytes_per_sec,
+                            "flow_packets_per_sec": flow_packets_per_sec
+                        }
+                    }
+                },
+                {
+                    "type": "x-defense-action",
+                    "id": defense_action_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": "Add redirection to Honeypots",
+                    "extensions": {
+                        "x-defense-action-ext": {
+                            "extension_type": "new-sdo",
+                            "attack_type": str(attack_type) if attack_type is not None else "unknown",
+                            "confidence": confidence,
+                            "execution_status": "success",
+                            "original_alert_id": alert.get('id')
+                        }
+                    }
+                }
+            ]
+        }
+
+        print("Generated STIX bundle:", json.dumps(stix_bundle, indent=2))
+
+        producer.send(kafka_topic, stix_bundle)
+        producer.flush()
+        print(f"STIX response sent to topic '{kafka_topic}' successfully.")
+    except Exception as e:
+        print(f"Error producing STIX response to Kafka topic: {e}")
+        import traceback
+        print("Full traceback:", traceback.format_exc())
+    finally:
+        producer.close()
+
+def produce_stix_response_with_alert_to_kafka_sc31(response_body, stix_alert, kafka_topic):
+    try:
+        producer = KafkaProducer(**producer_config)
+
+        # Extract information from the original STIX alert (SC31 format)
+        alert_id = stix_alert.get('id')
+        alert_name = stix_alert.get('name')
+        alert_description = stix_alert.get('description')
+        alert_types = stix_alert.get('indicator_types', [])
+        alert_pattern = stix_alert.get('pattern')
+        alert_labels = stix_alert.get('labels', [])
+        alert_external_refs = stix_alert.get('external_references', [])
+
+        # Extract attack type and confidence from custom fields
+        custom = stix_alert.get('custom', {})
+        attack_type = custom.get('x-attack-type')
+        confidence = float(custom.get('confidence', 0.0))
+
+        # Extract flow features from the STIX alert (SC31 format)
+        flow_features = custom.get('x-flow-features', {})
+        src_ip = flow_features.get('src_ip')
+        dst_ip = flow_features.get('dst_ip')
+        src_port = int(flow_features.get('src_port', 0))
+        dst_port = int(flow_features.get('dst_port', 0))
+        protocol = int(flow_features.get('protocol', 0))
+        timestamp = flow_features.get('timestamp')
+
+        # Convert timestamp to proper STIX format
+        try:
+            if timestamp:
+                timestamp_dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+                stix_timestamp = timestamp_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Error parsing timestamp {timestamp}: {e}")
+            stix_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        current_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        # Generate UUIDv5 for Cyber Observable Objects (SCOs)
+        def generate_uuidv5(name):
+            if name is None:
+                name = str(uuid.uuid4())  # Generate random UUID if name is None
+            namespace = uuid.NAMESPACE_DNS
+            return str(uuid.uuid5(namespace, str(name)))
+
+        src_ip_id = f"ipv4-addr--{generate_uuidv5(src_ip)}"
+        dst_ip_id = f"ipv4-addr--{generate_uuidv5(dst_ip)}"
+        network_traffic_id = f"network-traffic--{generate_uuidv5(f'{src_ip}-{dst_ip}-{src_port}-{dst_port}')}"
+        identity_id = f"identity--{str(uuid.uuid4())}"
+        observed_data_id = f"observed-data--{str(uuid.uuid4())}"
+        defense_action_id = f"x-defense-action--{str(uuid.uuid4())}"
+
+        # Extract additional flow features (robustly handle missing/negative values)
+        def safe_int(val, default=0):
+            try:
+                return int(val)
+            except Exception:
+                return default
+        def safe_float(val, default=0.0):
+            try:
+                return float(val)
+            except Exception:
+                return default
+
+        flow_duration = safe_float(flow_features.get('flow_duration', 0))
+        total_fwd_packets = safe_int(flow_features.get('total_fwd_packet', 0))
+        total_bwd_packets = safe_int(flow_features.get('total_bwd_packets', 0))
+        flow_bytes_per_sec = safe_float(flow_features.get('flow_bytes/s', 0.0))
+        flow_packets_per_sec = safe_float(flow_features.get('flow_packets/s', 0.0))
+        flow_iat_mean = safe_float(flow_features.get('flow_iat_mean', 0.0))
+        flow_iat_std = safe_float(flow_features.get('flow_iat_std', 0.0))
+
+        # Create STIX bundle
+        stix_bundle = {
+            "type": "bundle",
+            "id": f"bundle--{str(uuid.uuid4())}",
+            "objects": [
+                {
+                    "type": "identity",
+                    "spec_version": "2.1",
+                    "id": identity_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": "Network Flow Analyzer",
+                    "identity_class": "organization"
+                },
+                {
+                    "type": "observed-data",
+                    "spec_version": "2.1",
+                    "id": observed_data_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "first_observed": stix_timestamp,
+                    "last_observed": stix_timestamp,
+                    "number_observed": 1,
+                    "object_refs": [
+                        src_ip_id,
+                        dst_ip_id,
+                        network_traffic_id
+                    ],
+                    "created_by_ref": identity_id,
+                    "extensions": {
+                        "x-observed-data-ext": {
+                            "extension_type": "property-extension",
+                            "description": alert_description if alert_description is not None else "Network traffic observation"
+                        }
+                    }
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": src_ip_id,
+                    "value": str(src_ip) if src_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "ipv4-addr",
+                    "id": dst_ip_id,
+                    "value": str(dst_ip) if dst_ip is not None else "0.0.0.0"
+                },
+                {
+                    "type": "network-traffic",
+                    "id": network_traffic_id,
+                    "src_ref": src_ip_id,
+                    "dst_ref": dst_ip_id,
+                    "src_port": src_port,
+                    "dst_port": dst_port,
+                    "protocols": ["ipv4", "udp" if protocol == 17 else "tcp"],
+                    "extensions": {
+                        "x-network-traffic-ext": {
+                            "extension_type": "property-extension",
+                            "flow_duration": flow_duration,
+                            "total_fwd_packets": total_fwd_packets,
+                            "total_bwd_packets": total_bwd_packets,
+                            "flow_bytes_per_sec": flow_bytes_per_sec,
+                            "flow_packets_per_sec": flow_packets_per_sec,
+                            "flow_iat_mean": flow_iat_mean,
+                            "flow_iat_std": flow_iat_std
+                        }
+                    }
+                },
+                {
+                    "type": "x-defense-action",
+                    "id": defense_action_id,
+                    "created": current_time,
+                    "modified": current_time,
+                    "name": str(response_body.get("name", "No Action")),
+                    "target": str(response_body.get("target", "unknown")),
+                    "source": str(response_body.get("source", "network-flow-analyzer")),
+                    "extensions": {
+                        "x-defense-action-ext": {
+                            "extension_type": "new-sdo",
+                            "attack_type": str(attack_type) if attack_type is not None else "unknown",
+                            "confidence": confidence,
+                            "execution_status": "success",
+                            "original_alert_id": alert_id,
+                            "alert_types": alert_types,
+                            "alert_pattern": alert_pattern,
+                            "alert_labels": alert_labels,
+                            "external_references": alert_external_refs,
+                            "recommendation": {
+                                "position": response_body.get("pos"),
+                                "ability_id": response_body.get("ability_id"),
+                                "health": response_body.get("health"),
+                                "observations": response_body.get("observations", [])
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+
+        # Debug logging
+        print("Generated STIX bundle (SC31):", json.dumps(stix_bundle, indent=2))
+
+        producer.send(kafka_topic, stix_bundle)
+        producer.flush()
+        print(f"STIX response sent to topic '{kafka_topic}' successfully.")
+    except Exception as e:
+        print(f"Error producing STIX response to Kafka topic: {e}")
+        import traceback
+        print("Full traceback:", traceback.format_exc())
+    finally:
+        producer.close()
+
 @app.route('/publish_responses_with_alert_stix', methods=['POST'])
 def publish_responses_with_alert_stix():
     scenario = request.args.get('scenario').lower()
     # Get Kafka topics based on scenario
-    _, kafka_soar_topic = get_kafka_topic_for_scenario(scenario)
+    _, kafka_soar_topic, _ = get_kafka_topic_for_scenario(scenario)
     if not kafka_soar_topic:
         return jsonify({'status': 'error', 'message': 'Invalid scenario'}), 400
 
@@ -694,7 +1127,9 @@ def publish_responses_with_alert_stix():
         if scenario == 'sc11':
             produce_stix_response_with_alert_to_kafka_sc11(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc12':
-            produce_stix_response_with_alert_to_kafka_sc11(response_body, triaged_alert, kafka_soar_topic)
+            produce_stix_response_with_alert_to_kafka_sc12(response_body, triaged_alert, kafka_soar_topic)
+        elif scenario == 'sc13':
+            produce_stix_response_with_alert_to_kafka_sc13(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc31':
             produce_stix_response_with_alert_to_kafka_sc31(response_body, triaged_alert, kafka_soar_topic)
         elif scenario == 'sc33':
@@ -912,6 +1347,21 @@ def identify_top_k_similar_alerts_route():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+@app.route('/verify_playbook', methods=['POST'])
+def verify_playbook_route():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No playbook data provided"}), 400
+
+        use_local_model = request.args.get('use_local_model', 'false').lower() == 'true'
+        verifier = PlaybookVerifier(use_local_model=use_local_model)
+
+        verification_result = verifier.verify_playbook(data)
+        return jsonify(verification_result), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host=SERVER_IP, port=PORT, debug=True)

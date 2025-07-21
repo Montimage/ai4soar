@@ -1,0 +1,117 @@
+{
+  "nodes": [
+    {
+      "id": "e2fbd434-6bc4-4fe3-88cb-b763c1e19f9f",
+      "name": "Consume_alerts",
+      "description": "Runs bash with the data input",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "curl -X GET http://172.17.0.1:5000/consume_alerts?scenario=sc11",
+        "shuffle_input": ""
+      },
+      "code": "curl -X GET http://172.17.0.1:5000/consume_alerts?scenario=sc11",
+      "next": [
+        "35ee75ca-90a8-4f68-a53a-19234428fe26",
+        "996b7540-d57c-4f24-b8b3-7180ae28414d"
+      ]
+    },
+    {
+      "id": "35ee75ca-90a8-4f68-a53a-19234428fe26",
+      "name": "AI4ADAPT_GET",
+      "description": "Runs bash with the data input",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "curl -X GET http://192.168.126.68:8080/PPC/recommendation",
+        "shuffle_input": ""
+      },
+      "code": "curl -X GET http://192.168.126.68:8080/PPC/recommendation",
+      "next": [
+        "471342e5-117d-46b9-96cf-3b1278fe37e2",
+        "7fb3454c-5c71-4f5f-869d-1547dfd6c017"
+      ]
+    },
+    {
+      "id": "471342e5-117d-46b9-96cf-3b1278fe37e2",
+      "name": "Error_connection",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": "Failed to connect to AI4ADAPT"
+      },
+      "next": []
+    },
+    {
+      "id": "7fb3454c-5c71-4f5f-869d-1547dfd6c017",
+      "name": "AI4ADAPT_POST",
+      "description": "Runs bash with the data input",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "curl -X POST http://192.168.126.68:8080/PPC/recommendation",
+        "shuffle_input": ""
+      },
+      "code": "curl -X POST http://192.168.126.68:8080/PPC/recommendation",
+      "next": [
+        "6de85ee2-33fd-4a47-897b-bc8da0fba49c",
+        "9626f06b-04c8-43fc-b215-80d406d4442b"
+      ]
+    },
+    {
+      "id": "6de85ee2-33fd-4a47-897b-bc8da0fba49c",
+      "name": "Obtain_recommendation",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": "AI4ADAPT suggested defense action $ai4adapt_post.name (with id $ai4adapt_post.ability_id) on the target machine $ai4adapt_post.target"
+      },
+      "next": [
+        "d04481d3-f1f3-4ac5-ab02-531d22c015a3"
+      ]
+    },
+    {
+      "id": "9626f06b-04c8-43fc-b215-80d406d4442b",
+      "name": "Error_recommendation",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": "Failed to get a recommendation from AI4ADAPT"
+      },
+      "next": []
+    },
+    {
+      "id": "d04481d3-f1f3-4ac5-ab02-531d22c015a3",
+      "name": "Execute_recommendation",
+      "description": "Runs bash with the data input",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "curl -X POST http://172.17.0.1:5000/execute_ability -d \"ability_id=$ai4adapt_post.ability_id\" -d \"target=$ai4adapt_post.target\"",
+        "shuffle_input": ""
+      },
+      "code": "curl -X POST http://172.17.0.1:5000/execute_ability -d \"ability_id=$ai4adapt_post.ability_id\" -d \"target=$ai4adapt_post.target\"",
+      "next": [
+        "a1e62cc6-972d-4747-ba1e-1dd1aff75d00"
+      ]
+    },
+    {
+      "id": "a1e62cc6-972d-4747-ba1e-1dd1aff75d00",
+      "name": "Publish_responses",
+      "description": "Runs bash with the data input",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "curl -X POST \"http://172.17.0.1:5000/publish_responses_with_alert_stix?scenario=sc11\" \\\n  -F 'triaged_alert=$consume_alerts.message' \\\n  -F 'response_body=$ai4adapt_post'",
+        "shuffle_input": ""
+      },
+      "code": "curl -X POST \"http://172.17.0.1:5000/publish_responses_with_alert_stix?scenario=sc11\" \\\n  -F 'triaged_alert=$consume_alerts.message' \\\n  -F 'response_body=$ai4adapt_post'",
+      "next": []
+    },
+    {
+      "id": "996b7540-d57c-4f24-b8b3-7180ae28414d",
+      "name": "Shuffle_Tools_1",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": "ERROR"
+      },
+      "next": []
+    }
+  ]
+}

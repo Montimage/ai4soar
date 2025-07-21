@@ -1,0 +1,64 @@
+{
+  "nodes": [
+    {
+      "id": "10b5ee22-1c0d-413d-b1dd-33b1597a872b",
+      "name": "Scan_File",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": ""
+      },
+      "next": [
+        "9a1f7247-c861-42fa-becb-f8bfc789ea8c"
+      ]
+    },
+    {
+      "id": "36884eda-b98c-4b44-9f48-3e5b7006ed61",
+      "name": "Report",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": ""
+      },
+      "next": []
+    },
+    {
+      "id": "9a1f7247-c861-42fa-becb-f8bfc789ea8c",
+      "name": "Quarantine_File",
+      "description": "Repeats the call parameter",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "call": ""
+      },
+      "next": [
+        "812db211-551b-49ee-9ad5-820d00667cd4"
+      ]
+    },
+    {
+      "id": "812db211-551b-49ee-9ad5-820d00667cd4",
+      "name": "Delete_Malicious_File",
+      "description": "Runs python with the data input. Any prints will be returned.",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "Delete the suspicious file from the system."
+      },
+      "code": "Delete the suspicious file from the system.",
+      "next": [
+        "a648cec9-3c9a-49f4-bd57-cd3a8cb01a88"
+      ]
+    },
+    {
+      "id": "a648cec9-3c9a-49f4-bd57-cd3a8cb01a88",
+      "name": "Analyze_Malicious_File",
+      "description": "Runs python with the data input. Any prints will be returned.",
+      "api": "Shuffle Tools",
+      "parameters": {
+        "code": "Perform static and dynamic analysis on the same suspicious file."
+      },
+      "code": "Perform static and dynamic analysis on the same suspicious file.",
+      "next": [
+        "36884eda-b98c-4b44-9f48-3e5b7006ed61"
+      ]
+    }
+  ]
+}
