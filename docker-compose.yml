@@ -1,38 +1,6 @@
 version: '3.7'
 
 services:
-  cassandra:
-    container_name: cassandra
-    image: cassandra:3.11
-    restart: unless-stopped
-    hostname: cassandra
-    environment:
-      - MAX_HEAP_SIZE=1G
-      - HEAP_NEWSIZE=1G
-      - CASSANDRA_CLUSTER_NAME=thp
-    volumes:
-      - ./cassandra/data:/var/lib/cassandra/data
-    networks:
-      - ai4soar
-
-  thehive:
-    container_name: thehive
-    image: 'thehiveproject/thehive4:latest'
-    restart: unless-stopped
-    depends_on:
-      - cassandra
-    ports:
-      - '0.0.0.0:9000:9000'
-    volumes:
-      - ./thehive/application.conf:/etc/thehive/application.conf
-      - ./thehive/data:/opt/thp/thehive/data
-      - ./thehive/index:/opt/thp/thehive/index
-    command:
-      --cortex-port 9001
-      --cortex-keys ${CORTEX_KEY}
-    networks:
-      - ai4soar
-
   shuffle-frontend:
     image: ghcr.io/shuffle/shuffle-frontend:latest
     container_name: shuffle-frontend
@@ -49,7 +17,7 @@ services:
       - shuffle-backend
 
   shuffle-backend:
-    image: ghcr.io/shuffle/shuffle-backend:latest
+    image: ghcr.io/shuffle/shuffle-backend:nightly
     container_name: shuffle-backend
     hostname: ${BACKEND_HOSTNAME}
     ports:
@@ -82,6 +50,7 @@ services:
       - SHUFFLE_BASE_IMAGE_NAME=${SHUFFLE_BASE_IMAGE_NAME}
       - SHUFFLE_BASE_IMAGE_REGISTRY=${SHUFFLE_BASE_IMAGE_REGISTRY}
       - SHUFFLE_BASE_IMAGE_TAG_SUFFIX=${SHUFFLE_BASE_IMAGE_TAG_SUFFIX}
+      - SHUFFLE_BASE_IMAGE_REPOSITORY=${SHUFFLE_BASE_IMAGE_REPOSITORY}
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
       - SHUFFLE_PASS_WORKER_PROXY=${SHUFFLE_PASS_WORKER_PROXY}
@@ -91,7 +60,7 @@ services:
       - seccomp:unconfined
 
   shuffle-opensearch:
-    image: opensearchproject/opensearch:2.11.0
+    image: opensearchproject/opensearch:2.19.1
     hostname: shuffle-opensearch
     container_name: shuffle-opensearch
     environment:
@@ -104,6 +73,7 @@ services:
       - node.name=shuffle-opensearch
       - node.store.allow_mmap=false
       - discovery.seed_hosts=shuffle-opensearch
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${SHUFFLE_OPENSEARCH_PASSWORD}
     ulimits:
       memlock:
         soft: -1
