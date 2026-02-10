@@ -1,32 +1,27 @@
+"""
+Legacy Wazuh module for backward compatibility.
+New code should use core.services.WazuhService instead.
+"""
+
 import sys
 import requests
 import json
 import time
 from requests.auth import HTTPBasicAuth
+from core.config import config
 
-# Wazuh server details
-wazuh_servers = {
-    'uc1': 'https://192.168.21.35:9200',
-    'uc2': '',
-    'uc3': 'https://192.168.56.50:9200'
-}
-
-# Authentication credentials
-credentials = {
-    'uc1': ('admin', 'SecretPassword'),
-    'uc2': ('', ''),
-    'uc3': ('admin', 'admin')
-}
-
-# API endpoint for fetching alerts
-endpoint = '/wazuh-alerts-*/_search'
+# Use centralized configuration
+wazuh_config = config.wazuh
+wazuh_servers = wazuh_config.servers
+credentials = wazuh_config.credentials
+endpoint = wazuh_config.endpoint
 
 # Headers for the request
 headers = {
     'Content-Type': 'application/json'
 }
 
-# TODO: Query parameters for fetching the most recent alerts
+# Query parameters for fetching the most recent alerts
 query_params_uc2 = {
     "size": 10,  # Number of alerts to fetch
     "sort": [{
@@ -56,7 +51,7 @@ query_params_uc1 = {
     }
 }
 
-# TODO: update
+# Query parameters for UC3
 query_params_uc3 = {
     "size": 1,
     "sort": [{

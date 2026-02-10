@@ -1,17 +1,23 @@
+"""
+Legacy playbook processor module for backward compatibility.
+New code should use core.services.AlertService instead.
+"""
+
 import os
 import json
 from pymongo import MongoClient
+from core.config import config
 
 ALERTS_DIR = "../../tests/alerts"
 
 # Connect to MongoDB
 def connect_to_mongodb():
-    client = MongoClient('localhost', 27017)
-    # Access/Create the database "ai4soar"
-    db = client['ai4soar']
-    # Collection of alerts and playbooks
-    alerts_collection = db['alerts']
-    playbooks_collection = db['playbooks']
+    """Connect to MongoDB and return collections."""
+    mongodb_config = config.mongodb
+    client = MongoClient(mongodb_config.host, mongodb_config.port)
+    db = client[mongodb_config.database]
+    alerts_collection = db[mongodb_config.alerts_collection]
+    playbooks_collection = db[mongodb_config.playbooks_collection]
     return alerts_collection, playbooks_collection
 
 # List all historical alerts
@@ -31,8 +37,9 @@ def insert_alerts_from_dir():
 
 # Get playbook_id from the alert
 def get_playbook_id_for_alert(alert_id):
+    """Get playbook ID for a given alert."""
     try:
-        connect_to_mongodb()
+        alerts_collection, _ = connect_to_mongodb()
         alert_document = alerts_collection.find_one({"_id": alert_id})
 
         if alert_document:
@@ -40,12 +47,11 @@ def get_playbook_id_for_alert(alert_id):
             return playbook_id
         else:
             return None
-            raise ValueError(f"No alert found with index {index}")
 
     except Exception as e:
-        raise ValueError(f"Failed to get playbook_id for alert {index}: {str(e)}")
+        raise ValueError(f"Failed to get playbook_id for alert {alert_id}: {str(e)}")
 
-alerts_collection, _ = connect_to_mongodb()
-#insert_alerts_from_dir()
-
-# TODO: later we need to insert alerts received from Kafka channel into the alerts's collection
+# Note: Alerts from Kafka should be inserted using AlertService in the new architecture
+# Example usage:
+# alerts_collection, _ = connect_to_mongodb()
+# insert_alerts_from_dir()

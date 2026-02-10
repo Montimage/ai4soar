@@ -1,12 +1,18 @@
+"""
+Legacy Shuffle module for backward compatibility.
+New code should use core.services.PlaybookService instead.
+"""
+
 from flask import Flask, request, jsonify
 import requests
-from core.constants import PORT, SHUFFLE_API_BASE_URL, SHUFFLE_API_TOKEN
+from core.config import config
 
 app = Flask(__name__)
-headers = {"Authorization": f"Bearer {SHUFFLE_API_TOKEN}"}
+shuffle_config = config.shuffle
+headers = shuffle_config.get_headers()
 
 def get_playbooks():
-    execute_url = f"{SHUFFLE_API_BASE_URL}/workflows"
+    execute_url = f"{shuffle_config.api_base_url}/workflows"
 
     try:
         response = requests.get(execute_url, headers=headers)
@@ -33,7 +39,7 @@ def get_playbooks():
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
 
 def execute_playbook(playbook_id):
-    execute_url = f"{SHUFFLE_API_BASE_URL}/workflows/{playbook_id}/execute"
+    execute_url = f"{shuffle_config.api_base_url}/workflows/{playbook_id}/execute"
     data = request.get_json()
 
     try:
@@ -47,9 +53,9 @@ def execute_playbook(playbook_id):
     except requests.RequestException as e:
         return jsonify({"error": f"Request to Shuffle API failed: {str(e)}"})
 
-# TODO: parameters "execution_id" and "authorization" extracted from execute_playbook()
 def get_playbook_results():
-    execute_url = f"{SHUFFLE_API_BASE_URL}/streams/results"
+    """Get playbook execution results."""
+    execute_url = f"{shuffle_config.api_base_url}/streams/results"
     data = request.get_json()
 
     try:
@@ -65,4 +71,4 @@ def get_playbook_results():
 
 
 if __name__ == '__main__':
-    app.run(port=PORT, debug=True)
+    app.run(port=config.server.port, debug=True)

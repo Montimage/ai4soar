@@ -4,12 +4,11 @@ import os
 import json
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
-#from constants import SELECTED_FEATURES
+from core.config import config
 
-# Relevant keys for one-hot encoding
-SELECTED_FEATURES = ["srcip", "srcport", "dstip", "hostname", "technique"]
-
-MITRE_TECHNIQUES = ['Password Guessing', 'SSH', 'Password Cracking']
+# Use centralized configuration
+SELECTED_FEATURES = config.alert_processing.selected_features
+MITRE_TECHNIQUES = config.alert_processing.mitre_techniques
 
 def convert_one_hot_alert(alert):
     one_hot_vector = {}

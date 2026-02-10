@@ -1,5 +1,6 @@
 '''
-Caldera client for execution of defenses.
+Legacy Caldera client for backward compatibility.
+New code should use core.services.CalderaService instead.
 
 This script should be invoked after the recommendation service (AI4ADAPT) returns
 an ability_id (defense) to a target (machine).
@@ -15,12 +16,14 @@ machine. They change on every machine restart, etc.
 
 import requests
 import json
+from core.config import config
 
-BASE_URL = 'http://192.168.126.176:8888/'  # TODO replace by env variable
-API_URL = BASE_URL + 'api/v2/'
-API_KEY_BLUE = 'BLUEADMIN123'  # TODO replace by env variable
-DEFAULT_HEADERS = {'Accept': 'application/json', 'KEY': API_KEY_BLUE}
-POST_HEADERS = {'Content-Type': 'application/json', 'KEY': API_KEY_BLUE}
+caldera_config = config.caldera
+BASE_URL = caldera_config.base_url
+API_URL = caldera_config.api_url
+API_KEY_BLUE = caldera_config.api_key_blue
+DEFAULT_HEADERS = caldera_config.get_default_headers()
+POST_HEADERS = caldera_config.get_post_headers()
 
 # The HUMAN name of the machine/users and caldera client id (the paw_agent)
 TARGETS = {'dorothy': None, 'toto': None, 'wizard': None}
