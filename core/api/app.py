@@ -11,7 +11,8 @@ from core.api.routes import (
     playbooks_bp,
     kafka_bp,
     verification_bp,
-    encoding_bp
+    encoding_bp,
+    recommendations_bp,
 )
 
 # Setup logging
@@ -34,6 +35,7 @@ def create_app():
     app.register_blueprint(kafka_bp)
     app.register_blueprint(verification_bp)
     app.register_blueprint(encoding_bp)
+    app.register_blueprint(recommendations_bp)
     
     logger.info("Flask application created and blueprints registered")
     

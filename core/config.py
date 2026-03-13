@@ -149,6 +149,60 @@ class WazuhConfig:
 
 
 @dataclass
+class AlertProcessingConfig:
+    """Alert processing configuration"""
+    selected_features: list = None
+    mitre_techniques: list = None
+
+    def __post_init__(self):
+        if self.selected_features is None:
+            self.selected_features = ["srcip", "srcport", "dstip", "hostname", "technique"]
+
+        if self.mitre_techniques is None:
+            self.mitre_techniques = ['Password Guessing', 'SSH', 'Password Cracking']
+
+
+@dataclass
+class STIXConfig:
+    """MITRE ATT&CK STIX knowledge base configuration"""
+    data_path: str = "../attack-stix-data/enterprise-attack/enterprise-attack.json"
+    domain: str = "enterprise-attack"
+
+    def __post_init__(self):
+        self.data_path = os.getenv('STIX_DATA_PATH', self.data_path)
+
+
+@dataclass
+class OTRFConfig:
+    """OTRF Security-Datasets configuration"""
+    base_path: str = "../Security-Datasets"
+    dataset_output: str = "datasets/otrf_normalized.jsonl"
+    max_events_per_scenario: int = 200
+
+    def __post_init__(self):
+        self.base_path = os.getenv('OTRF_PATH', self.base_path)
+
+
+@dataclass
+class ModelConfig:
+    """Trained model paths for Path B similarity learning"""
+    model_dir: str = "models"
+    knn_path: str = "models/knn_recommender.joblib"
+    lr_path: str = "models/lr_recommender.joblib"
+    ovr_lr_path: str = "models/ovr_lr_recommender.joblib"
+    ovr_svm_path: str = "models/ovr_svm_recommender.joblib"
+    xgb_path: str = "models/xgb_recommender.joblib"
+    label_binarizer_path: str = "models/label_binarizer.joblib"
+    label_encoder_path: str = "models/label_encoder.joblib"
+    feature_engineer_path: str = "models/feature_engineer.joblib"
+    # Which model to use at inference: "knn" | "lr" | "ovr_lr" | "ovr_svm" | "xgb"
+    active_model: str = "knn"
+
+    def __post_init__(self):
+        self.active_model = os.getenv('SIMILARITY_MODEL', self.active_model)
+
+
+@dataclass
 class MongoDBConfig:
     """MongoDB configuration"""
     host: str = 'localhost'
@@ -156,30 +210,17 @@ class MongoDBConfig:
     database: str = 'ai4soar'
     alerts_collection: str = 'alerts'
     playbooks_collection: str = 'playbooks'
-    
+    mitre_kb_collection: str = 'mitre_kb'
+
     def __post_init__(self):
         self.host = os.getenv('MONGODB_HOST', self.host)
         self.port = int(os.getenv('MONGODB_PORT', self.port))
         self.database = os.getenv('MONGODB_DATABASE', self.database)
 
 
-@dataclass
-class AlertProcessingConfig:
-    """Alert processing configuration"""
-    selected_features: list = None
-    mitre_techniques: list = None
-    
-    def __post_init__(self):
-        if self.selected_features is None:
-            self.selected_features = ["srcip", "srcport", "dstip", "hostname", "technique"]
-        
-        if self.mitre_techniques is None:
-            self.mitre_techniques = ['Password Guessing', 'SSH', 'Password Cracking']
-
-
 class Config:
     """Main configuration class"""
-    
+
     def __init__(self):
         self.server = ServerConfig()
         self.kafka = KafkaConfig()
@@ -188,6 +229,9 @@ class Config:
         self.wazuh = WazuhConfig()
         self.mongodb = MongoDBConfig()
         self.alert_processing = AlertProcessingConfig()
+        self.stix = STIXConfig()
+        self.otrf = OTRFConfig()
+        self.model = ModelConfig()
 
 
 # Global configuration instance
