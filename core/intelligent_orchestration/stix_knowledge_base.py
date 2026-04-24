@@ -32,23 +32,38 @@ class STIXKnowledgeBase:
         self._name_to_id: Dict[str, str]  = {}       # lowercase name → T-code
         self._loaded = False
 
+    # Compact bundled index — committed to the repo, no external dependency
+    _BUNDLED_INDEX = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "data", "mitre_techniques.json"
+    )
+
     def load(self) -> None:
-        """Parse the STIX bundle and build indices. Idempotent."""
+        """Build technique indices. Idempotent.
+
+        Priority:
+          1. Full STIX bundle (STIX_DATA_PATH) — rich metadata, optional.
+          2. Bundled compact index (data/mitre_techniques.json) — always present.
+        """
         if self._loaded:
             return
 
-        if not os.path.exists(self.stix_path):
-            raise FileNotFoundError(
-                f"STIX data file not found: {self.stix_path}. "
-                "Set STIX_DATA_PATH in your .env or verify the path."
-            )
+        if os.path.exists(self.stix_path):
+            self._load_from_stix()
+        else:
+            if self.stix_path:
+                logger.debug(
+                    f"Full STIX bundle not found at '{self.stix_path}'; "
+                    "falling back to bundled compact index."
+                )
+            self._load_from_bundled()
 
-        logger.info(f"Loading STIX knowledge base from {self.stix_path} ...")
+        self._loaded = True
+
+    def _load_from_stix(self) -> None:
+        logger.info(f"Loading STIX knowledge base from {self.stix_path} …")
         with open(self.stix_path, "r", encoding="utf-8") as f:
             bundle = json.load(f)
-
-        objects = bundle.get("objects", [])
-        for obj in objects:
+        for obj in bundle.get("objects", []):
             if obj.get("type") != "attack-pattern":
                 continue
             if obj.get("x_mitre_deprecated", False) or obj.get("revoked", False):
@@ -57,7 +72,6 @@ class STIXKnowledgeBase:
             if not ext_id:
                 continue
             tech = {
-                "stix_id":       obj["id"],
                 "technique_id":  ext_id,
                 "name":          obj.get("name", ""),
                 "description":   obj.get("description", ""),
@@ -70,10 +84,20 @@ class STIXKnowledgeBase:
                 "is_subtechnique": obj.get("x_mitre_is_subtechnique", False),
             }
             self._techniques[ext_id] = tech
-            self._name_to_id[obj.get("name", "").lower()] = ext_id
+            self._name_to_id[tech["name"].lower()] = ext_id
+        logger.info(f"STIX KB: {len(self._techniques)} techniques loaded from bundle")
 
-        logger.info(f"STIX knowledge base: {len(self._techniques)} active techniques indexed")
-        self._loaded = True
+    def _load_from_bundled(self) -> None:
+        bundled = os.path.normpath(self._BUNDLED_INDEX)
+        if not os.path.exists(bundled):
+            logger.warning("Bundled MITRE index not found; technique lookup disabled.")
+            return
+        with open(bundled, "r", encoding="utf-8") as f:
+            mapping: Dict[str, str] = json.load(f)
+        for tid, name in mapping.items():
+            self._techniques[tid] = {"technique_id": tid, "name": name, "tactics": [], "description": ""}
+            self._name_to_id[name.lower()] = tid
+        logger.info(f"STIX KB: {len(self._techniques)} techniques loaded from bundled index")
 
     def get_technique_info(self, technique_id: str) -> Optional[Dict]:
         """Return metadata for a technique ID, or None if not found."""

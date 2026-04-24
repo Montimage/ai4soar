@@ -212,7 +212,7 @@ class ModelConfig:
     label_encoder_path: str = "models/label_encoder.joblib"
     feature_engineer_path: str = "models/feature_engineer.joblib"
     # Which model to use at inference: "knn" | "lr" | "ovr_lr" | "ovr_svm" | "rf" | "mlp" | "xgb"
-    active_model: str = "lr"
+    active_model: str = "mlp"
 
     def __post_init__(self):
         self.active_model = os.getenv('SIMILARITY_MODEL', self.active_model)

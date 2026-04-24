@@ -31,8 +31,13 @@ output/
 logs/
 *.log
 
-# ── Large binary model files (re-trainable from scripts/) ────────────────────
-models/*.joblib
+# ── ML model binaries ────────────────────────────────────────────────────────
+# Large models (rf=221 MB, knn=7.4 MB) are gitignored — retrain with:
+#   python3 scripts/train_similarity_model.py
+# Small models committed directly (mlp=968 KB is the default).
+models/knn_recommender.joblib
+models/rf_recommender.joblib
+models/xgb_recommender.joblib
 
 # ── Datasets (large, external, or generated) ─────────────────────────────────
 datasets/
