@@ -1,8 +1,54 @@
-cassandra/
-cortex/
-elasticsearch/
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Environment / secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Virtual environments ─────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Runtime output (generated at runtime, not source) ────────────────────────
+output/
+logs/
+*.log
+
+# ── Large binary model files (re-trainable from scripts/) ────────────────────
+models/*.joblib
+
+# ── Datasets (large, external, or generated) ─────────────────────────────────
+datasets/
+Security-Datasets/
+attack-stix-data/
+
+# ── Shuffle SOAR runtime dirs ────────────────────────────────────────────────
 shuffle-apps/
 shuffle-database/
 shuffle-files/
+cassandra/
+cortex/
+elasticsearch/
 thehive/
-*.pyc
+
+# ── Test / coverage artefacts ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/

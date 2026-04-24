@@ -1,0 +1,177 @@
+/* ── Base ── */
+body {
+  background-color: #f8f9fa;
+  color: #1a1f27;
+  min-height: 100vh;
+}
+
+/* ── Status dots ── */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-ok             { background-color: #1a7f37; }
+.status-error          { background-color: #cf222e; }
+.status-not_configured { background-color: #6e7781; }
+.status-loading        { background-color: #9a6700; animation: pulse 1.2s ease-in-out infinite; }
+.status-unknown        { background-color: #6e7781; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1;   }
+  50%       { opacity: 0.2; }
+}
+
+/* ── Cards ── */
+.card {
+  background-color: #ffffff;
+  border: 1px solid #d0d7de;
+  box-shadow: 0 1px 3px rgba(31,35,40,.06);
+}
+.card-header {
+  background-color: #f6f8fa;
+  border-bottom: 1px solid #d0d7de;
+}
+.card-link:hover {
+  background-color: #f6f8fa;
+  border-color: #0969da;
+}
+
+/* ── Confidence tier badges ── */
+.tier-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.tier-HIGH   { background: #dafbe1; color: #1a7f37; border: 1px solid #1a7f37; }
+.tier-MEDIUM { background: #fff8c5; color: #9a6700; border: 1px solid #9a6700; }
+.tier-LOW    { background: #ffebe9; color: #cf222e; border: 1px solid #cf222e; }
+
+/* ── Path badges ── */
+.path-badge {
+  display: inline-block;
+  font-family: monospace;
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: #eaeef2;
+  border: 1px solid #d0d7de;
+  color: #24292f;
+}
+
+/* ── Alert table rows ── */
+.alert-row {
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+.alert-row:hover        { background-color: #f6f8fa !important; }
+.alert-row.table-active { background-color: #dbeafe !important; }
+
+/* ── Playbook cards in orchestration result ── */
+.playbook-card {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  transition: border-color 0.15s;
+}
+.playbook-card:hover { border-color: #0969da; }
+
+/* ── JSON viewer ── */
+.json-viewer {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.76rem;
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #24292f;
+}
+
+/* ── Severity badges ── */
+.badge-sev-critical { background-color: #cf222e !important; color: #fff !important; }
+.badge-sev-high     { background-color: #bc4c00 !important; color: #fff !important; }
+.badge-sev-medium   { background-color: #9a6700 !important; color: #fff !important; }
+.badge-sev-low      { background-color: #0969da !important; color: #fff !important; }
+.badge-sev-info,
+.badge-sev-informational { background-color: #6e7781 !important; color: #fff !important; }
+
+/* ── Sortable column headers ── */
+.sort-col {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sort-col:hover { color: #0969da; }
+
+/* ── Tables ── */
+.table { --bs-table-border-color: #d0d7de; }
+.table thead th { background-color: #f6f8fa; color: #57606a; font-weight: 600; }
+.table tbody tr:hover { background-color: #f6f8fa; }
+
+/* ── Nav tabs ── */
+.nav-tabs { border-bottom-color: #d0d7de; }
+.nav-tabs .nav-link        { color: #57606a; border-color: transparent; }
+.nav-tabs .nav-link.active {
+  background-color: #ffffff;
+  border-color: #d0d7de #d0d7de #ffffff;
+  color: #0969da;
+  font-weight: 600;
+}
+.nav-tabs .nav-link:hover { border-color: #d0d7de; color: #24292f; }
+
+/* ── Modals ── */
+.modal-content  { background-color: #ffffff; border: 1px solid #d0d7de; }
+.modal-header   { border-bottom-color: #d0d7de; }
+.modal-footer   { border-top-color: #d0d7de; }
+
+/* ── Form controls (override dark defaults used in templates) ── */
+.form-control, .form-select, .input-group-text {
+  background-color: #ffffff;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+.form-control:focus, .form-select:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9,105,218,.12);
+}
+.form-control[readonly] { background-color: #f6f8fa; }
+
+/* ── Code / monospace ── */
+code { color: #0969da; background: #eaeef2; padding: 1px 5px; border-radius: 4px; }
+
+/* ── Toast container ── */
+#toast-container {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  z-index: 9999;
+}
+
+/* ── Execution results table ── */
+.table-borderless td { border: none !important; }
+
+/* ── High-contrast tactic colours (light-bg safe) ── */
+.tactic-lateral-movement     { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
+.tactic-credential-access    { background:#fef3c7 !important; color:#78350f !important; border:1px solid #fbbf24 !important; }
+.tactic-discovery            { background:#e0f2fe !important; color:#075985 !important; border:1px solid #38bdf8 !important; }
+.tactic-execution            { background:#ede9fe !important; color:#4c1d95 !important; border:1px solid #a78bfa !important; }
+.tactic-persistence          { background:#f0fdf4 !important; color:#14532d !important; border:1px solid #4ade80 !important; }
+.tactic-privilege-escalation { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
+.tactic-defense-evasion      { background:#f1f5f9 !important; color:#334155 !important; border:1px solid #94a3b8 !important; }
+.tactic-collection           { background:#ecfdf5 !important; color:#064e3b !important; border:1px solid #34d399 !important; }
+.tactic-exfiltration         { background:#fef3c7 !important; color:#78350f !important; border:1px solid #fbbf24 !important; }
+.tactic-command-and-control  { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
+.tactic-impact               { background:#fff1f2 !important; color:#881337 !important; border:1px solid #fb7185 !important; }
+.tactic-initial-access       { background:#fff7ed !important; color:#7c2d12 !important; border:1px solid #fb923c !important; }
+

@@ -1,0 +1,83 @@
+id: pb-t1046-respond-network-discovery
+name: "Respond to Internal Network Discovery"
+version: "1.0"
+techniques:
+  - T1046
+  - T1083
+  - T1082
+  - T1087
+  - T1135
+  - T1018
+tactics:
+  - discovery
+description: "Detect and contain reconnaissance/scanning activity from a compromised host"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Source IP performing the scan or discovery"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+    description: "Host generating discovery traffic"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.dstuser
+      - _source.data.win.eventdata.subjectUserName
+    description: "User account associated with discovery"
+  dst_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.dstip
+      - data.dstip
+    description: "Target being scanned (if single target)"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--8e92fefe-6750-4c23-ac98-8ac2bbceab0a"
+  name: "Contain Discovery Activity from {{src_ip}}"
+  description: "Rate-limit or block {{src_ip}} scanning, investigate {{hostname}}"
+  playbook_types:
+    - prevention
+    - investigation
+    - notification
+  workflow_start: "step--rate-limit"
+  workflow:
+    step--rate-limit:
+      type: action
+      name: "Rate-limit scanning traffic from source"
+      commands:
+        - type: bash
+          command: "iptables -I OUTPUT -s {{src_ip}} -m limit --limit 10/min -j ACCEPT && iptables -A OUTPUT -s {{src_ip}} -j DROP"
+      on_success: "step--investigate"
+      on_failure: "step--investigate"
+    step--investigate:
+      type: action
+      name: "Capture active connections and open ports"
+      commands:
+        - type: bash
+          command: "ss -tnp | grep '{{src_ip}}' > /tmp/ai4soar_discovery_$(date +%s).txt; netstat -rn >> /tmp/ai4soar_discovery_$(date +%s).txt"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Alert SOC to reconnaissance activity"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Network Discovery from {{src_ip}}","severity":"medium","src_ip":"{{src_ip}}","host":"{{hostname}}","user":"{{username}}","technique":"T1046"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

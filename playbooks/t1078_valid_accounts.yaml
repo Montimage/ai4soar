@@ -1,0 +1,80 @@
+id: pb-t1078-respond-compromised-account
+name: "Respond to Compromised Account"
+version: "1.0"
+techniques:
+  - T1078
+  - T1078.001
+  - T1078.002
+  - T1078.003
+tactics:
+  - initial-access
+  - persistence
+  - privilege-escalation
+  - defense-evasion
+description: "Disable the compromised account, revoke sessions, and notify the user"
+
+parameters:
+  username:
+    type: string
+    required: true
+    sources:
+      - _source.data.dstuser
+      - data.dstuser
+      - _source.data.win.eventdata.subjectUserName
+    description: "Compromised account username"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "IP address used by the attacker"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+    description: "Affected host"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--d412acc9-886d-4a36-b700-934b5737db9e"
+  name: "Respond to Compromised Account {{username}}"
+  description: "Disable {{username}}, revoke active sessions, block {{src_ip}}"
+  playbook_types:
+    - remediation
+    - prevention
+    - notification
+  workflow_start: "step--disable-account"
+  workflow:
+    step--disable-account:
+      type: action
+      name: "Disable compromised account"
+      commands:
+        - type: bash
+          command: "usermod -L {{username}} 2>/dev/null || net user {{username}} /active:no 2>/dev/null"
+        - type: bash
+          command: "passwd -l {{username}} 2>/dev/null"
+      on_success: "step--block-ip"
+      on_failure: "step--block-ip"
+    step--block-ip:
+      type: action
+      name: "Block attacker IP"
+      commands:
+        - type: bash
+          command: "iptables -I INPUT -s {{src_ip}} -j DROP 2>/dev/null || echo 'No src_ip available'"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Notify security team and user"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Compromised Account: {{username}}","severity":"critical","user":"{{username}}","src_ip":"{{src_ip}}","host":"{{hostname}}","technique":"T1078"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

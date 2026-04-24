@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">Integration Status</h4>
+    <small class="text-muted">Real-time connectivity check for all SOAR platform integrations</small>
+  </div>
+  <button class="btn btn-outline-primary btn-sm" onclick="loadHealth()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+  </button>
+</div>
+
+<!-- Integration cards -->
+<div class="row g-3 mb-4" id="integration-cards">
+  <!-- populated by JS -->
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const INTEGRATIONS = [
+  { key: 'shuffle', icon: 'bi-shuffle',               label: 'Shuffle SOAR',  urlKey: 'url'      },
+  { key: 'mongodb', icon: 'bi-database',              label: 'MongoDB',       urlKey: null       },
+  { key: 'kafka',   icon: 'bi-lightning-charge-fill', label: 'Kafka Broker',  urlKey: 'broker'   },
+  { key: 'nats',    icon: 'bi-arrow-left-right',      label: 'NATS Broker',   urlKey: 'url'      },
+  { key: 'llm',     icon: 'bi-cpu',                   label: 'LLM',           urlKey: 'provider' },
+];
+
+function skeletonCards() {
+  return INTEGRATIONS.map(({ label }) => `
+    <div class="col-12 col-md-6 col-xl-4">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="status-dot status-loading"></span>
+            <span class="fw-semibold">${label}</span>
+          </div>
+          <small class="text-muted">Checking…</small>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function renderCards(data) {
+  return INTEGRATIONS.map(({ key, icon, label, urlKey }) => {
+    const info  = data[key] || { status: 'unknown' };
+    const { status, latency_ms, error } = info;
+    const addr  = urlKey ? (info[urlKey] || '') : '';
+    const dotCls = `status-dot status-${status}`;
+
+    let detail;
+    if (status === 'ok')
+      detail = `<span class="text-success small"><i class="bi bi-check-circle me-1"></i>${latency_ms} ms</span>`;
+    else if (status === 'not_configured')
+      detail = `<span class="text-muted small">Not configured</span>`;
+    else
+      detail = `<span class="text-danger small" title="${error || ''}">${(error || 'unreachable').substring(0, 55)}</span>`;
+
+    return `
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <span class="${dotCls}"></span>
+                  <span class="fw-semibold">${label}</span>
+                </div>
+                ${addr ? `<div class="text-muted font-monospace small mb-1">${addr}</div>` : ''}
+                ${detail}
+              </div>
+              <i class="bi ${icon} fs-2 text-secondary opacity-25 ms-2"></i>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadHealth() {
+  const container = document.getElementById('integration-cards');
+  container.innerHTML = skeletonCards();
+  try {
+    const data = await apiFetch('/health/integrations');
+    container.innerHTML = renderCards(data);
+  } catch (e) {
+    container.innerHTML = `
+      <div class="col-12">
+        <div class="alert alert-danger">Failed to fetch integration status: ${e.message}</div>
+      </div>`;
+  }
+}
+
+loadHealth();
+</script>
+{% endblock %}

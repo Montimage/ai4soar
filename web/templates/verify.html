@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+{% block title %}Playbook Verification{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold">Playbook Verification</h4>
+    <small class="text-muted">Validate CACAO 2.0, Shuffle, or internal playbooks — spec + structure + LLM semantic check</small>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- ── Left: input panel ── -->
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header py-2">
+        <span class="fw-semibold small"><i class="bi bi-pencil-square me-1 text-primary"></i>Playbook Input</span>
+      </div>
+      <div class="card-body pb-2">
+
+        <!-- Source tabs -->
+        <ul class="nav nav-tabs nav-sm mb-3" id="inputTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active small py-1" data-bs-toggle="tab"
+                    data-bs-target="#input-paste" type="button">
+              <i class="bi bi-clipboard me-1"></i>Paste JSON
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link small py-1" data-bs-toggle="tab"
+                    data-bs-target="#input-library" type="button">
+              <i class="bi bi-journal-code me-1"></i>Load from Library
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+          <!-- Paste tab -->
+          <div class="tab-pane fade show active" id="input-paste">
+            <div class="mb-2">
+              <textarea class="form-control font-monospace"
+                        id="playbook-json" rows="18" spellcheck="false"
+                        placeholder='Paste CACAO 2.0 JSON, Shuffle workflow JSON, or internal {nodes:[...]} format…'
+                        style="font-size:.82rem; resize:vertical"></textarea>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" onclick="loadExample('cacao')">
+                <i class="bi bi-file-earmark-code me-1"></i>CACAO example
+              </button>
+              <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="formatJson()">
+                <i class="bi bi-braces me-1"></i>Format
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="clearInput()">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Library tab -->
+          <div class="tab-pane fade" id="input-library">
+            <div class="mb-3">
+              <label class="form-label small text-muted">Select a playbook template</label>
+              <select class="form-select"
+                      id="library-select" onchange="loadFromLibrary()">
+                <option value="">— choose a playbook —</option>
+              </select>
+            </div>
+            <div id="library-preview" class="d-none">
+              <div class="small text-muted mb-1">CACAO Preview</div>
+              <pre class="json-viewer" id="library-json-preview" style="max-height:300px"></pre>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /card-body -->
+
+      <!-- Options + run button -->
+      <div class="card-footer py-2">
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="use-llm">
+            <label class="form-check-label small" for="use-llm">
+              Use LLM <span class="text-muted">(semantic check)</span>
+            </label>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100" onclick="runVerification()" id="verify-btn">
+          <i class="bi bi-patch-check-fill me-1"></i>Run Verification
+        </button>
+      </div>
+    </div><!-- /card -->
+  </div><!-- /col -->
+
+  <!-- ── Right: results panel ── -->
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-header py-2">
+        <span class="fw-semibold small"><i class="bi bi-clipboard2-check me-1 text-primary"></i>Verification Results</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Idle state -->
+        <div id="result-idle" class="text-center py-5 text-muted">
+          <i class="bi bi-patch-check fs-1 d-block mb-2 opacity-25"></i>
+          Paste or load a playbook, then click <strong>Run Verification</strong>.
+        </div>
+
+        <!-- Spinner -->
+        <div id="result-spinner" class="text-center py-5 d-none">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <div class="text-muted small">Running verification pipeline…</div>
+        </div>
+
+        <!-- Results -->
+        <div id="result-body" class="d-none">
+
+          <!-- Score row -->
+          <div class="d-flex align-items-center gap-3 mb-4">
+            <div class="text-center" style="min-width:80px">
+              <div class="fw-bold" id="score-label" style="font-size:2rem">—</div>
+              <div class="text-muted small">/ 100</div>
+            </div>
+            <div class="flex-grow-1">
+              <div class="progress mb-1" style="height:10px">
+                <div id="score-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
+              </div>
+              <div id="pass-badge"></div>
+            </div>
+            <div class="text-muted small text-end" id="llm-status"></div>
+          </div>
+
+          <!-- Issues grouped by category -->
+          <div id="issues-spec"       class="mb-3"></div>
+          <div id="issues-structural" class="mb-3"></div>
+          <div id="issues-llm"        class="mb-3"></div>
+
+          <!-- All-clear -->
+          <div id="all-clear" class="d-none text-center py-3">
+            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+            <div class="text-success fw-semibold">No issues found — playbook is valid.</div>
+          </div>
+        </div>
+
+      </div><!-- /card-body -->
+    </div>
+  </div><!-- /col -->
+
+</div><!-- /row -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Library loading ── */
+let libraryPlaybooks = [];
+
+async function initLibrary() {
+  try {
+    const data = await apiFetch('/playbook_library?include_cacao=true');
+    libraryPlaybooks = data.playbooks || [];
+    const sel = document.getElementById('library-select');
+    libraryPlaybooks.forEach(pb => {
+      const opt = document.createElement('option');
+      opt.value = pb.id;
+      opt.textContent = `${pb.name} (${(pb.techniques||[]).join(', ')})`;
+      sel.appendChild(opt);
+    });
+    // Auto-select if playbook_id in URL
+    const preload = new URLSearchParams(window.location.search).get('playbook_id');
+    if (preload) {
+      sel.value = preload;
+      // Switch to library tab
+      bootstrap.Tab.getOrCreateInstance(
+        document.querySelector('[data-bs-target="#input-library"]')
+      ).show();
+      loadFromLibrary();
+    }
+  } catch (e) {
+    console.warn('Could not load playbook library:', e.message);
+  }
+}
+
+function loadFromLibrary() {
+  const id = document.getElementById('library-select').value;
+  const pb = libraryPlaybooks.find(p => p.id === id);
+  if (!pb || !pb.cacao) {
+    document.getElementById('library-preview').classList.add('d-none');
+    return;
+  }
+  const json = JSON.stringify(pb.cacao, null, 2);
+  document.getElementById('library-json-preview').textContent = json;
+  document.getElementById('library-preview').classList.remove('d-none');
+}
+
+/* ── Input helpers ── */
+function getInputJson() {
+  const pasteActive = document.getElementById('input-paste').classList.contains('show');
+  if (pasteActive) {
+    return document.getElementById('playbook-json').value.trim();
+  }
+  const id = document.getElementById('library-select').value;
+  const pb = libraryPlaybooks.find(p => p.id === id);
+  return pb?.cacao ? JSON.stringify(pb.cacao, null, 2) : '';
+}
+
+function formatJson() {
+  const ta = document.getElementById('playbook-json');
+  try {
+    ta.value = JSON.stringify(JSON.parse(ta.value), null, 2);
+  } catch (e) {
+    showToast('Invalid JSON: ' + e.message, 'error');
+  }
+}
+
+function clearInput() {
+  document.getElementById('playbook-json').value = '';
+  resetResults();
+}
+
+function loadExample(fmt) {
+  const example = {
+    type: "playbook",
+    spec_version: "cacao-2.0",
+    id: "playbook--" + crypto.randomUUID(),
+    name: "Example Block Attacker",
+    created: new Date().toISOString(),
+    modified: new Date().toISOString(),
+    workflow_start: "step--block",
+    workflow: {
+      "step--block": {
+        type: "action",
+        name: "Block source IP",
+        commands: [{ type: "bash", command: "iptables -I INPUT -s {{src_ip}} -j DROP" }],
+        on_completion: "step--end"
+      },
+      "step--end": { type: "end" }
+    }
+  };
+  document.getElementById('playbook-json').value = JSON.stringify(example, null, 2);
+}
+
+/* ── Verification ── */
+async function runVerification() {
+  const raw = getInputJson();
+  if (!raw) { showToast('No playbook input provided.', 'warning'); return; }
+
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { showToast('Invalid JSON: ' + e.message, 'error'); return; }
+
+  const useLLM     = document.getElementById('use-llm').checked;
+  const structOnly = !useLLM;
+
+  document.getElementById('verify-btn').disabled = true;
+  hide('result-idle'); show('result-spinner'); hide('result-body');
+
+  try {
+    const libraryActive = document.getElementById('input-library').classList.contains('show');
+    const qs = new URLSearchParams({
+      structural_only: structOnly,
+      is_template:     libraryActive,
+    });
+    const result = await apiFetch(`/verify_playbook?${qs}`, {
+      method: 'POST',
+      body: JSON.stringify(parsed),
+    });
+    renderResults(result, !useLLM);
+  } catch (e) {
+    document.getElementById('result-idle').innerHTML =
+      `<div class="alert alert-danger">${escHtml(e.message)}</div>`;
+    show('result-idle');
+  } finally {
+    hide('result-spinner');
+    document.getElementById('verify-btn').disabled = false;
+  }
+}
+
+function resetResults() {
+  hide('result-body'); hide('result-spinner');
+  document.getElementById('result-idle').innerHTML = `
+    <i class="bi bi-patch-check fs-1 d-block mb-2 opacity-25"></i>
+    Paste or load a playbook, then click <strong>Run Verification</strong>.`;
+  show('result-idle');
+}
+
+function renderResults(r, structOnly) {
+  const score  = r.overall_score ?? 100;
+  const passed = r.passed ?? (score >= 60);
+
+  // Score bar
+  document.getElementById('score-label').textContent = score;
+  const bar = document.getElementById('score-bar');
+  bar.style.width   = score + '%';
+  bar.className     = 'progress-bar ' + (score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-danger');
+
+  document.getElementById('pass-badge').innerHTML = passed
+    ? '<span class="badge bg-success"><i class="bi bi-check-lg me-1"></i>PASSED</span>'
+    : '<span class="badge bg-danger"><i class="bi bi-x-lg me-1"></i>FAILED</span>';
+
+  // LLM status
+  const llmSt = r.llm_checked || (structOnly ? 'skipped (structural only)' : 'skipped');
+  document.getElementById('llm-status').innerHTML =
+    `<i class="bi bi-cpu me-1"></i>LLM: <span class="text-muted">${escHtml(llmSt)}</span>`;
+
+  // Group issues
+  const allIssues = r.issues || [];
+  const spec       = allIssues.filter(i =>
+    i.description.includes('CACAO') || i.description.includes('UUID') ||
+    i.description.includes('placeholder') || i.description.includes('Missing required') ||
+    i.description.includes("'type'") || i.description.includes("'spec_version'") ||
+    i.description.includes("'id'") || i.description.includes("workflow_start") ||
+    i.description.includes("references unknown"));
+  const structural = allIssues.filter(i => !spec.includes(i) && (
+    i.description.includes('cycle') || i.description.includes('start node') ||
+    i.description.includes('end node') || i.description.includes('unreachable') ||
+    i.description.includes('dead') || i.description.includes("Step '")));
+  const llm        = allIssues.filter(i => !spec.includes(i) && !structural.includes(i));
+
+  renderIssueGroup('issues-spec',       'Spec Compliance',  spec);
+  renderIssueGroup('issues-structural', 'Structural',       structural);
+  renderIssueGroup('issues-llm',        'LLM Semantic',     llm, structOnly);
+
+  document.getElementById('all-clear').classList.toggle('d-none', allIssues.length > 0);
+  show('result-body');
+}
+
+function renderIssueGroup(elId, label, issues, skipped = false) {
+  const el = document.getElementById(elId);
+  const SEV_CLS = { error: 'danger', warning: 'warning', info: 'info' };
+
+  let content;
+  if (skipped) {
+    content = `<div class="text-muted small fst-italic">Skipped — enable LLM check to run semantic validation.</div>`;
+  } else if (!issues.length) {
+    content = `<div class="text-success small"><i class="bi bi-check-circle me-1"></i>No issues found.</div>`;
+  } else {
+    content = issues.map(i => {
+      const cls  = SEV_CLS[i.severity] || 'secondary';
+      const node = i.node_id ? `<code class="text-muted ms-2" style="font-size:.7rem">${escHtml(i.node_id)}</code>` : '';
+      return `
+        <div class="d-flex align-items-start gap-2 mb-2">
+          <span class="badge bg-${cls} flex-shrink-0 mt-1" style="font-size:.65rem">${(i.severity||'info').toUpperCase()}</span>
+          <div class="small">
+            ${escHtml(i.description)}${node}
+            <span class="text-muted ms-2" style="font-size:.7rem">score impact: ${i.score}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  el.innerHTML = `
+    <div class="mb-1 small fw-semibold text-muted text-uppercase" style="letter-spacing:.5px;font-size:.7rem">
+      ${label}
+      ${!skipped ? `<span class="badge bg-secondary ms-1 fw-normal">${issues.length}</span>` : ''}
+    </div>
+    ${content}`;
+}
+
+function show(id) { document.getElementById(id).classList.remove('d-none'); }
+function hide(id) { document.getElementById(id).classList.add('d-none'); }
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+initLibrary();
+</script>
+{% endblock %}

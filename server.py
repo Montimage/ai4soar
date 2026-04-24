@@ -2,7 +2,7 @@
 Main server entry point for AI4SOAR platform.
 """
 
-from core.api.api import app
+from api.api import app
 from core.config import config
 
 if __name__ == '__main__':

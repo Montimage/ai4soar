@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Playbook Library{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0 fw-bold">Playbook Library</h4>
+    <small class="text-muted">CACAO 2.0 response templates — indexed by MITRE ATT&amp;CK technique</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <input type="text" class="form-control form-control-sm"
+           style="width:220px" id="pb-search" placeholder="Filter by name, technique, tactic…"
+           oninput="filterCards()">
+    <span class="text-muted small" id="pb-count"></span>
+  </div>
+</div>
+
+<div id="pb-loading" class="text-center py-5 text-muted">
+  <div class="spinner-border text-primary mb-3" role="status"></div>
+  <div>Loading playbook library…</div>
+</div>
+
+<div class="row g-3" id="pb-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allPlaybooks   = [];
+// Start with the bundled static map; merge server-side STIX names on top if available
+let techniqueNames = (typeof MITRE_NAMES !== 'undefined') ? { ...MITRE_NAMES } : {};
+
+async function loadLibrary() {
+  try {
+    const [data, serverNames] = await Promise.all([
+      apiFetch('/playbook_library?include_cacao=true'),
+      apiFetch('/technique_names').catch(() => ({})),
+    ]);
+    // Server names (from STIX KB) take precedence when available
+    techniqueNames = { ...techniqueNames, ...(serverNames || {}) };
+    allPlaybooks   = data.playbooks || [];
+    document.getElementById('pb-count').textContent =
+      `${allPlaybooks.length} template${allPlaybooks.length !== 1 ? 's' : ''}`;
+    renderCards(allPlaybooks);
+  } catch (e) {
+    document.getElementById('pb-loading').innerHTML =
+      `<div class="alert alert-danger">Failed to load library: ${escHtml(e.message)}</div>`;
+  } finally {
+    document.getElementById('pb-loading').classList.add('d-none');
+  }
+}
+
+function filterCards() {
+  const q = document.getElementById('pb-search').value.toLowerCase();
+  if (!q) { renderCards(allPlaybooks); return; }
+  const filtered = allPlaybooks.filter(pb =>
+    (pb.name        || '').toLowerCase().includes(q) ||
+    (pb.description || '').toLowerCase().includes(q) ||
+    (pb.techniques  || []).some(t => t.toLowerCase().includes(q)) ||
+    (pb.tactics     || []).some(t => t.toLowerCase().includes(q)) ||
+    (pb.parameters  || []).some(p => p.name.toLowerCase().includes(q))
+  );
+  renderCards(filtered);
+}
+
+function renderCards(playbooks) {
+  const grid = document.getElementById('pb-grid');
+  // Dispose existing tooltips before replacing innerHTML
+  grid.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+    bootstrap.Tooltip.getInstance(el)?.dispose();
+  });
+  if (!playbooks.length) {
+    grid.innerHTML = `<div class="col-12 text-center py-5 text-muted">
+      <i class="bi bi-search fs-1 d-block mb-2 opacity-25"></i>No playbooks match the filter.</div>`;
+    return;
+  }
+  grid.innerHTML = playbooks.map(pb => pbCard(pb)).join('');
+  grid.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el =>
+    new bootstrap.Tooltip(el));
+}
+
+const TACTIC_CSS = {
+  'lateral-movement':     'tactic-lateral-movement',
+  'credential-access':    'tactic-credential-access',
+  'discovery':            'tactic-discovery',
+  'execution':            'tactic-execution',
+  'persistence':          'tactic-persistence',
+  'privilege-escalation': 'tactic-privilege-escalation',
+  'defense-evasion':      'tactic-defense-evasion',
+  'collection':           'tactic-collection',
+  'exfiltration':         'tactic-exfiltration',
+  'command-and-control':  'tactic-command-and-control',
+  'impact':               'tactic-impact',
+  'initial-access':       'tactic-initial-access',
+};
+
+function pbCard(pb) {
+  const slug    = pb.id.replace(/[^a-z0-9]/gi, '-');
+  const tactics = (pb.tactics || [])
+    .map(t => {
+      const cls   = TACTIC_CSS[t] || '';
+      const style = cls ? '' : 'background:#f1f5f9;color:#334155;border:1px solid #94a3b8';
+      return `<span class="badge me-1 ${cls}" style="font-size:.68rem;${style}">${escHtml(t)}</span>`;
+    }).join('');
+  const techniques = (pb.techniques || [])
+    .map(t => {
+      const name   = techniqueNames[t] || '';
+      const tipTxt = name ? `${t} — ${name}` : t;
+      return `<span class="badge font-monospace me-1 text-dark"
+               data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="${escHtml(tipTxt)}"
+               style="font-size:.68rem;background:#e2e8f0;border:1px solid #94a3b8;cursor:default">${escHtml(t)}</span>`;
+    }).join('');
+
+  const reqCount = (pb.parameters || []).filter(p => p.required).length;
+
+  const paramsRows = (pb.parameters || []).map(p => `
+    <tr class="small">
+      <td class="font-monospace text-info" style="font-size:.75rem">${escHtml(p.name)}</td>
+      <td><span class="badge text-dark" style="font-size:.62rem;background:#e2e8f0;border:1px solid #94a3b8">${escHtml(p.type)}</span></td>
+      <td class="text-center">
+        ${p.required
+          ? '<i class="bi bi-check-circle-fill text-success"></i>'
+          : '<i class="bi bi-dash text-muted"></i>'}
+      </td>
+      <td class="font-monospace text-muted" style="font-size:.72rem">
+        ${p.default != null ? escHtml(String(p.default)) : '<span class="text-muted opacity-50">—</span>'}
+      </td>
+      <td class="text-muted" style="font-size:.72rem">${escHtml(p.description)}</td>
+    </tr>`).join('');
+
+  const cacaoJson = pb.cacao ? JSON.stringify(pb.cacao, null, 2) : null;
+
+  return `
+  <div class="col-12 col-xl-6" id="pb-card-${slug}">
+    <div class="card h-100">
+      <!-- Card header -->
+      <div class="card-header py-2 d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">${escHtml(pb.name)}</div>
+          <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
+        </div>
+        <div class="d-flex gap-1 align-items-center flex-shrink-0 ms-2">
+          <span class="badge bg-secondary" style="font-size:.62rem">v${pb.version}</span>
+          <span class="badge bg-primary bg-opacity-25 text-primary" style="font-size:.62rem">CACAO 2.0</span>
+        </div>
+      </div>
+
+      <div class="card-body pb-2" style="font-size:.9rem">
+        <!-- Description -->
+        <p class="text-muted mb-3">${escHtml(pb.description)}</p>
+
+        <!-- Technique + tactic badges -->
+        <div class="mb-1">${techniques}</div>
+        <div class="mb-3">${tactics}</div>
+
+        <!-- Parameters accordion -->
+        <div class="mb-2">
+          <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none d-flex align-items-center gap-1"
+                  data-bs-toggle="collapse" data-bs-target="#params-${slug}">
+            <i class="bi bi-sliders me-1"></i>
+            Parameters
+            <span class="badge bg-secondary ms-1">${(pb.parameters||[]).length}</span>
+            ${reqCount ? `<span class="badge bg-warning text-dark ms-1">${reqCount} required</span>` : ''}
+          </button>
+          <div class="collapse mt-2" id="params-${slug}">
+            ${paramsRows ? `
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:.82rem">
+                <thead class="text-muted">
+                  <tr>
+                    <th>Name</th><th>Type</th><th class="text-center">Req</th>
+                    <th>Default</th><th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>${paramsRows}</tbody>
+              </table>
+            </div>` : '<div class="text-muted small">No parameters defined.</div>'}
+          </div>
+        </div>
+
+        <!-- CACAO viewer accordion -->
+        ${cacaoJson ? `
+        <div class="mb-2">
+          <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
+                  data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">
+            <i class="bi bi-code-slash me-1"></i>CACAO 2.0 Workflow
+          </button>
+          <div class="collapse mt-2" id="cacao-${slug}">
+            <pre class="json-viewer">${escHtml(cacaoJson)}</pre>
+          </div>
+        </div>` : ''}
+      </div>
+
+      <!-- Card footer actions -->
+      <div class="card-footer py-2 d-flex gap-2">
+        <a href="/ui/verify?playbook_id=${encodeURIComponent(pb.id)}"
+           class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-patch-check me-1"></i>Verify
+        </a>
+        <button class="btn btn-sm btn-outline-secondary"
+                data-pb-id="${escAttr(pb.id)}"
+                onclick="copyCacao(this)">
+          <i class="bi bi-clipboard me-1"></i>Copy CACAO
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function copyCacao(btn) {
+  const id = btn.dataset.pbId;
+  const pb = allPlaybooks.find(p => p.id === id);
+  const text = pb?.cacao
+    ? JSON.stringify(pb.cacao, null, 2)
+    : (pb?.id || id);
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy CACAO'; }, 1800);
+  });
+}
+
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+
+loadLibrary();
+</script>
+{% endblock %}

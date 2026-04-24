@@ -71,3 +71,8 @@ class STIXBuildError(AI4SOARException):
 class DatabaseError(AI4SOARException):
     """Raised when database operations fail."""
     pass
+
+
+class LLMUnavailableError(AI4SOARException):
+    """Raised when no LLM provider is configured or reachable."""
+    pass

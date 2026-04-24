@@ -1,0 +1,657 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0 fw-bold">Alert Management</h4>
+</div>
+
+<!-- Source tabs -->
+<ul class="nav nav-tabs mb-3" id="alertTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-hist-btn"
+            data-bs-toggle="tab" data-bs-target="#tab-historical" type="button" role="tab">
+      <i class="bi bi-archive-fill text-info me-1"></i>Historical (MongoDB)
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-nats-btn"
+            data-bs-toggle="tab" data-bs-target="#tab-nats" type="button" role="tab">
+      <i class="bi bi-arrow-left-right text-success me-1"></i>Live (NATS)
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-kafka-btn"
+            data-bs-toggle="tab" data-bs-target="#tab-kafka" type="button" role="tab">
+      <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Live (Kafka)
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Kafka tab ── -->
+  <div class="tab-pane fade" id="tab-kafka" role="tabpanel">
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <button class="btn btn-sm btn-outline-warning" onclick="fetchKafkaAlert()">
+        <i class="bi bi-arrow-down-circle me-1"></i>Fetch Next
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearAlerts('kafka')" title="Clear">
+        <i class="bi bi-trash"></i>
+      </button>
+      <span class="text-muted small" id="kafka-count">0 alerts</span>
+      <span class="text-muted small">·</span>
+      <div class="input-group input-group-sm" style="width:200px">
+        <span class="input-group-text text-muted" style="font-size:.7rem">topic</span>
+        <input type="text" id="kafka-topic-display" class="form-control font-monospace"
+               style="font-size:.72rem" readonly
+               value="ai4soar.sc1.1.triage" title="Topic resolved from scenario">
+      </div>
+      <select class="form-select form-select-sm w-auto"
+              id="scenario-select" onchange="updateKafkaTopic()">
+        <option value="sc1">sc1</option>
+        <option value="sc2">sc2</option>
+        <option value="sc3">sc3</option>
+      </select>
+      <span class="text-muted small">of Kafka</span>
+      <div id="kafka-loading" class="d-none ms-1">
+        <span class="spinner-border spinner-border-sm text-warning me-1"></span>
+        <small class="text-muted">Fetching…</small>
+      </div>
+    </div>
+    <div id="kafka-empty" class="text-center py-5 text-muted">
+      <i class="bi bi-lightning fs-1 d-block mb-2 opacity-25"></i>
+      Click <strong>Fetch Next</strong> to pull an alert from the Kafka triage topic.
+    </div>
+    <div class="table-responsive d-none" id="kafka-table-wrap">
+      <table class="table table-hover table-bordered align-middle mb-0" id="kafka-table">
+        <thead class="small text-muted border-secondary">
+          <tr>
+            <th style="width:140px">Timestamp</th>
+            <th style="width:74px">Severity</th>
+            <th style="width:62px">Source</th>
+            <th style="max-width:180px">Description</th>
+            <th style="width:90px">T-codes</th>
+            <th style="width:108px">Src IP</th>
+            <th style="width:108px">Dst IP</th>
+            <th style="width:32px"></th>
+          </tr>
+        </thead>
+        <tbody id="kafka-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── NATS Live tab ── -->
+  <div class="tab-pane fade" id="tab-nats" role="tabpanel">
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <button class="btn btn-sm btn-outline-success" id="nats-connect-btn" onclick="toggleNats()">
+        <i class="bi bi-broadcast me-1"></i>Connect
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearAlerts('nats')" title="Clear">
+        <i class="bi bi-trash"></i>
+      </button>
+      <span class="text-muted small" id="nats-count">0 alerts</span>
+      <span class="text-muted small">·</span>
+      <div class="d-flex align-items-center gap-1" id="nats-status-wrap">
+        <span class="status-dot status-not_configured" id="nats-status-dot"></span>
+        <span class="text-muted small" id="nats-status-text">Disconnected</span>
+      </div>
+      <span class="text-muted small">·</span>
+      <div class="input-group input-group-sm" style="width:220px">
+        <span class="input-group-text text-muted" style="font-size:.7rem">topic</span>
+        <input type="text" id="nats-topic" class="form-control font-monospace"
+               style="font-size:.72rem" value="ai4soar.alerts" placeholder="ai4soar.alerts"
+               title="NATS subject to subscribe to">
+      </div>
+      <span class="text-muted small">of NATS</span>
+    </div>
+    <div id="nats-empty" class="text-center py-5 text-muted">
+      <i class="bi bi-broadcast fs-1 d-block mb-2 opacity-25"></i>
+      Click <strong>Connect</strong> to subscribe to the NATS subject.
+    </div>
+    <div class="table-responsive d-none" id="nats-table-wrap">
+      <table class="table table-hover table-bordered align-middle mb-0" id="nats-table">
+        <thead class="small text-muted border-secondary">
+          <tr>
+            <th style="width:140px">Timestamp</th>
+            <th style="width:74px">Severity</th>
+            <th style="width:62px">Source</th>
+            <th style="max-width:180px">Description</th>
+            <th style="width:90px">T-codes</th>
+            <th style="width:108px">Host</th>
+            <th style="width:32px"></th>
+          </tr>
+        </thead>
+        <tbody id="nats-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Historical tab ── -->
+  <div class="tab-pane fade show active" id="tab-historical" role="tabpanel">
+
+    <!-- Filter bar -->
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <div class="input-group input-group-sm" style="width:220px">
+        <span class="input-group-text text-muted">
+          <i class="bi bi-search"></i>
+        </span>
+        <input type="text" class="form-control"
+               id="hist-search" placeholder="Search description, host, tactic…"
+               oninput="debounceSearch()">
+      </div>
+      <select class="form-select form-select-sm w-auto"
+              id="hist-tactic" onchange="loadHistPage(1)">
+        <option value="">All tactics</option>
+      </select>
+      <select class="form-select form-select-sm w-auto"
+              id="hist-limit" onchange="loadHistPage(1)">
+        <option value="10" selected>10 / page</option>
+        <option value="25">25 / page</option>
+        <option value="50">50 / page</option>
+        <option value="100">100 / page</option>
+      </select>
+      <button class="btn btn-sm btn-outline-info" onclick="loadHistPage(1)">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      </button>
+      <span class="text-muted small ms-1" id="hist-count"></span>
+      <div id="hist-loading" class="d-none ms-1">
+        <span class="spinner-border spinner-border-sm text-info"></span>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="hist-empty" class="text-center py-5 text-muted d-none">
+      <i class="bi bi-archive fs-1 d-block mb-2 opacity-25"></i>
+      No alerts match the current filter.
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive" id="hist-table-wrap">
+      <table class="table table-hover table-bordered align-middle mb-0" id="hist-table" style="font-size:.85rem">
+        <thead class="text-muted border-secondary" id="hist-thead">
+          <tr>
+            <th class="sort-col" data-col="timestamp" style="width:148px;white-space:nowrap">
+              Timestamp <i class="bi bi-sort-down ms-1 text-primary sort-icon"></i>
+            </th>
+            <th class="sort-col" data-col="severity"  style="width:88px">
+              Severity <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
+            </th>
+            <th style="width:72px">Source</th>
+            <th class="sort-col" data-col="host"      style="width:110px">
+              Host <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
+            </th>
+            <th style="width:104px">Src IP</th>
+            <th style="width:104px">Dst IP</th>
+            <th class="sort-col" data-col="description" style="min-width:120px;max-width:160px">
+              Description <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
+            </th>
+            <th class="sort-col" data-col="tactic"    style="width:110px">
+              Tactic <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
+            </th>
+            <th style="width:96px">T-codes</th>
+            <th style="width:32px"></th>
+          </tr>
+        </thead>
+        <tbody id="hist-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination footer -->
+    <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2"
+         id="hist-pagination" style="display:none!important">
+      <small class="text-muted" id="hist-pager-info"></small>
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="hist-prev"
+                onclick="loadHistPage(histState.page - 1)">
+          <i class="bi bi-chevron-left"></i> Prev
+        </button>
+        <div class="d-flex align-items-center gap-1">
+          <span class="text-muted small">Page</span>
+          <input type="number" class="form-control form-control-sm text-center"
+                 id="hist-page-input" style="width:60px" min="1"
+                 onchange="loadHistPage(parseInt(this.value)||1)">
+          <span class="text-muted small" id="hist-total-pages">of 1</span>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" id="hist-next"
+                onclick="loadHistPage(histState.page + 1)">
+          Next <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /tab-content -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── State ── */
+let kafkaAlerts    = [];
+let natsAlerts     = [];
+let histAlerts     = [];
+let selectedAlert  = null;
+let selectedSource = null;   // 'kafka' | 'nats' | 'historical'
+
+/* ── NATS Live (SSE) ── */
+let _natsES = null;   // EventSource instance
+
+function toggleNats() {
+  if (_natsES) {
+    disconnectNats();
+  } else {
+    connectNats();
+  }
+}
+
+function connectNats() {
+  if (_natsES) return;
+  const subject = (document.getElementById('nats-topic').value.trim() || 'ai4soar.alerts');
+  _natsES = new EventSource(`/api/nats_stream?subject=${encodeURIComponent(subject)}`);
+
+  setNatsStatus('connecting', 'Connecting…');
+  document.getElementById('nats-connect-btn').innerHTML =
+    '<i class="bi bi-stop-circle me-1"></i>Disconnect';
+
+  _natsES.onmessage = function(e) {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === 'connected') {
+      setNatsStatus('ok', 'Live');
+      return;
+    }
+    // Normalize: NATS payload may be bare alert or wrapped
+    const alert = msg.alert || msg;
+    natsAlerts.unshift(alert);
+    if (natsAlerts.length > 500) natsAlerts.length = 500;  // cap
+    renderNatsTable(natsAlerts);
+  };
+
+  _natsES.onerror = function() {
+    setNatsStatus('error', 'Reconnecting…');
+  };
+}
+
+function disconnectNats() {
+  if (_natsES) { _natsES.close(); _natsES = null; }
+  setNatsStatus('not_configured', 'Disconnected');
+  document.getElementById('nats-connect-btn').innerHTML =
+    '<i class="bi bi-broadcast me-1"></i>Connect';
+}
+
+function setNatsStatus(dotStatus, text) {
+  const dot  = document.getElementById('nats-status-dot');
+  const span = document.getElementById('nats-status-text');
+  dot.className  = `status-dot status-${dotStatus}`;
+  span.textContent = text;
+}
+
+function renderNatsTable(alerts) {
+  const wrap  = document.getElementById('nats-table-wrap');
+  const empty = document.getElementById('nats-empty');
+  const tbody = document.getElementById('nats-tbody');
+  document.getElementById('nats-count').textContent =
+    `${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`;
+
+  if (!alerts.length) {
+    wrap.classList.add('d-none');
+    empty.classList.remove('d-none');
+    return;
+  }
+  empty.classList.add('d-none');
+  wrap.classList.remove('d-none');
+
+  tbody.innerHTML = alerts.map((alert, i) => {
+    const f  = extractAlertFields(alert);
+    const ts = String(f.timestamp).replace('T', ' ').replace('Z', '').substring(0, 19);
+    return `
+      <tr class="alert-row small" data-idx="${i}" data-source="nats"
+          onclick="selectAlert(${i}, 'nats')">
+        <td class="font-monospace text-muted" style="font-size:.75rem">${ts}</td>
+        <td>${severityBadge(f.severityLabel)}</td>
+        <td>${sourceBadge(alert)}</td>
+        <td class="text-truncate" style="max-width:180px" title="${escHtml(f.description)}">${escHtml(f.description)}</td>
+        <td>${tcodeBadges(f.technique_ids)}</td>
+        <td class="font-monospace text-muted small">${escHtml(f.host)}</td>
+        <td><button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:.65rem;line-height:1.4"
+                    onclick="deleteAlert(${i}, 'nats', event)" title="Delete">
+              <i class="bi bi-trash3"></i></button></td>
+      </tr>`;
+  }).join('');
+}
+
+/* Disconnect SSE when leaving tab */
+document.getElementById('tab-nats-btn').addEventListener('hide.bs.tab', () => {
+  if (_natsES) disconnectNats();
+});
+
+/* ── Kafka ── */
+async function fetchKafkaAlert() {
+  const scenario = document.getElementById('scenario-select').value;
+  setLoading('kafka', true);
+  try {
+    const data = await apiFetch(`/consume_alerts?scenario=${scenario}`);
+    if (data.status === 'success' && data.message) {
+      kafkaAlerts.unshift(data.message);
+      renderTable('kafka', kafkaAlerts);
+    } else {
+      showToast('No messages available on this Kafka topic.', 'warning');
+    }
+  } catch (e) {
+    showToast('Kafka error: ' + e.message, 'error');
+  } finally {
+    setLoading('kafka', false);
+  }
+}
+
+/* ── Historical — server-side pagination / sort / search ── */
+
+const histState = {
+  page: 1, pages: 1, total: 0, limit: 10,
+  sortBy: 'timestamp', sortDir: -1,
+  search: '', tactic: '',
+};
+let _searchTimer = null;
+
+function debounceSearch() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => loadHistPage(1), 380);
+}
+
+async function loadHistPage(page) {
+  page = Math.max(1, Math.min(page, histState.pages || 1));
+  histState.page   = page;
+  histState.limit  = parseInt(document.getElementById('hist-limit').value) || 50;
+  histState.search = document.getElementById('hist-search').value.trim();
+  histState.tactic = document.getElementById('hist-tactic').value;
+
+  setLoading('hist', true);
+  try {
+    const qs = new URLSearchParams({
+      page:     histState.page,
+      limit:    histState.limit,
+      sort_by:  histState.sortBy,
+      sort_dir: histState.sortDir,
+      search:   histState.search,
+      tactic:   histState.tactic,
+    });
+    const data = await apiFetch(`/historical_alerts?${qs}`);
+    histAlerts       = data.alerts || [];
+    histState.total  = data.total  || 0;
+    histState.pages  = data.pages  || 1;
+    histState.page   = data.page   || 1;
+    renderHistTable(histAlerts);
+    updateHistPager();
+  } catch (e) {
+    showToast('MongoDB error: ' + e.message, 'error');
+  } finally {
+    setLoading('hist', false);
+  }
+}
+
+function updateHistPager() {
+  const { page, pages, total, limit } = histState;
+  const from = Math.min((page - 1) * limit + 1, total);
+  const to   = Math.min(page * limit, total);
+  document.getElementById('hist-count').textContent =
+    total ? `Showing ${from}–${to} of ${total.toLocaleString()} alerts` : '0 alerts';
+  document.getElementById('hist-pager-info').textContent =
+    total ? `${from}–${to} of ${total.toLocaleString()}` : '';
+  document.getElementById('hist-page-input').value = page;
+  document.getElementById('hist-total-pages').textContent = `of ${pages}`;
+  document.getElementById('hist-prev').disabled = page <= 1;
+  document.getElementById('hist-next').disabled = page >= pages;
+  const pag = document.getElementById('hist-pagination');
+  pag.style.removeProperty('display');
+  pag.style.display = total > 0 ? '' : 'none';
+}
+
+async function loadTacticOptions() {
+  try {
+    const tactics = await apiFetch('/alerts/tactics');
+    const sel = document.getElementById('hist-tactic');
+    tactics.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      sel.appendChild(opt);
+    });
+  } catch (_) { /* non-fatal */ }
+}
+
+function clearAlerts(source) {
+  if (source === 'kafka') {
+    kafkaAlerts = [];
+    renderTable('kafka', []);
+  } else if (source === 'nats') {
+    natsAlerts = [];
+    renderNatsTable([]);
+  } else {
+    histAlerts = [];
+    renderHistTable([]);
+    histState.total = 0; histState.pages = 1;
+    updateHistPager();
+  }
+}
+
+/* ── Table rendering helpers ── */
+function setLoading(prefix, on) {
+  document.getElementById(prefix + '-loading').classList.toggle('d-none', !on);
+}
+
+function sourceBadge(alert) {
+  const adapter = String(alert._adapter || '').toLowerCase();
+  if (adapter === 'mmt')
+    return '<span class="badge text-white" style="background:#6f42c1;font-size:.7rem">MMT</span>';
+  if (adapter.includes('wazuh'))
+    return '<span class="badge text-white" style="background:#0c7abf;font-size:.7rem">Wazuh</span>';
+  if (alert.Channel || alert.EventID || alert.EventRecordID)
+    return '<span class="badge text-white" style="background:#b45309;font-size:.7rem">Dataset</span>';
+  const src = alert._source || {};
+  if (src.agent || src.rule)
+    return '<span class="badge text-white" style="background:#0c7abf;font-size:.7rem">Wazuh</span>';
+  if (adapter && adapter !== 'generic' && adapter !== 'unknown')
+    return `<span class="badge text-white" style="background:#374151;font-size:.7rem">${escHtml(adapter)}</span>`;
+  return '<span class="badge text-white" style="background:#6b7280;font-size:.7rem">?</span>';
+}
+
+function tcodeBadges(ids) {
+  if (!ids || !ids.length) return '<span class="text-muted">—</span>';
+  const shown = ids.slice(0, 2).map(id =>
+    `<span class="badge font-monospace me-1 text-dark" style="font-size:.62rem;background:#e2e8f0;border:1px solid #94a3b8">${escHtml(id)}</span>`
+  ).join('');
+  const more  = ids.length > 2
+    ? `<span class="text-muted" style="font-size:.62rem">+${ids.length - 2}</span>` : '';
+  return shown + more;
+}
+
+/* Kafka live table (simple, client-side) */
+function renderTable(source, alerts) {
+  const p     = source === 'kafka' ? 'kafka' : 'hist';
+  const wrap  = document.getElementById(`${p}-table-wrap`);
+  const empty = document.getElementById(`${p}-empty`);
+  const tbody = document.getElementById(`${p}-tbody`);
+  const count = document.getElementById(`${p}-count`);
+  count.textContent = `${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`;
+
+  if (!alerts.length) {
+    wrap.classList.add('d-none');
+    empty.classList.remove('d-none');
+    return;
+  }
+  empty.classList.add('d-none');
+  wrap.classList.remove('d-none');
+
+  tbody.innerHTML = alerts.map((alert, i) => {
+    const f  = extractAlertFields(alert);
+    const ts = String(f.timestamp).replace('T', ' ').replace('Z', '').substring(0, 19);
+    return `
+      <tr class="alert-row small" data-idx="${i}" data-source="${source}"
+          onclick="selectAlert(${i}, '${source}')">
+        <td class="font-monospace text-muted" style="font-size:.75rem">${ts}</td>
+        <td>${severityBadge(f.severityLabel)}</td>
+        <td>${sourceBadge(alert)}</td>
+        <td class="text-truncate" style="max-width:180px" title="${escHtml(f.description)}">${escHtml(f.description)}</td>
+        <td>${tcodeBadges(f.technique_ids)}</td>
+        <td class="font-monospace text-muted small">${f.src_ip}</td>
+        <td class="font-monospace text-muted small">${f.dst_ip}</td>
+        <td><button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:.65rem;line-height:1.4"
+                    onclick="deleteAlert(${i}, '${source}', event)" title="Delete">
+              <i class="bi bi-trash3"></i></button></td>
+      </tr>`;
+  }).join('');
+}
+
+/* Historical table header needs a delete column */
+const TACTIC_CSS = {
+  'lateral movement':     'tactic-lateral-movement',
+  'credential access':    'tactic-credential-access',
+  'discovery':            'tactic-discovery',
+  'execution':            'tactic-execution',
+  'persistence':          'tactic-persistence',
+  'privilege escalation': 'tactic-privilege-escalation',
+  'defense evasion':      'tactic-defense-evasion',
+  'collection':           'tactic-collection',
+  'exfiltration':         'tactic-exfiltration',
+  'command and control':  'tactic-command-and-control',
+  'impact':               'tactic-impact',
+  'initial access':       'tactic-initial-access',
+};
+function tacticBadge(tactic) {
+  if (!tactic || tactic === '—') return '<span class="text-muted">—</span>';
+  const key = tactic.toLowerCase();
+  const cls = TACTIC_CSS[key] || '';
+  const style = cls ? '' : 'background:#f1f5f9;color:#334155;border:1px solid #94a3b8';
+  return `<span class="badge text-wrap ${cls}" style="font-size:.65rem;${style}">${escHtml(tactic)}</span>`;
+}
+
+function renderHistTable(alerts) {
+  const empty = document.getElementById('hist-empty');
+  const tbody = document.getElementById('hist-tbody');
+
+  if (!alerts.length) {
+    empty.classList.remove('d-none');
+    tbody.innerHTML = '';
+    return;
+  }
+  empty.classList.add('d-none');
+
+  tbody.innerHTML = alerts.map((alert, i) => {
+    const f  = extractAlertFields(alert);
+    const ts = String(f.timestamp).replace('T', ' ').replace('Z', '').substring(0, 19);
+    const id = escHtml(alert._id || '');
+
+    return `
+      <tr class="alert-row" data-idx="${i}" data-source="historical"
+          onclick="selectAlert(${i}, 'historical')">
+        <td class="font-monospace text-muted" style="font-size:.78rem;white-space:nowrap">${ts}</td>
+        <td>${severityBadge(f.severityLabel)}</td>
+        <td>${sourceBadge(alert)}</td>
+        <td class="font-monospace text-muted" style="font-size:.78rem">${escHtml(f.host)}</td>
+        <td class="font-monospace text-muted" style="font-size:.78rem">${f.src_ip}</td>
+        <td class="font-monospace text-muted" style="font-size:.78rem">${f.dst_ip}</td>
+        <td class="text-truncate" style="max-width:160px" title="${escHtml(f.description)}">${escHtml(f.description)}</td>
+        <td>${tacticBadge(f.tactic)}</td>
+        <td>${tcodeBadges(f.technique_ids)}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:.65rem;line-height:1.4"
+                  onclick="deleteHistAlert('${id}', ${i}, event)" title="Delete">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function deleteHistAlert(alertId, idx, event) {
+  event.stopPropagation();
+  try {
+    await apiFetch(`/alerts/${encodeURIComponent(alertId)}`, { method: 'DELETE' });
+    histAlerts.splice(idx, 1);
+    renderHistTable(histAlerts);
+    histState.total = Math.max(0, histState.total - 1);
+    updateHistPager();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+/* ── Alert selection → navigate to Orchestration page ── */
+function selectAlert(idx, source) {
+  const alerts = source === 'kafka' ? kafkaAlerts
+               : source === 'nats'  ? natsAlerts
+               : histAlerts;
+  const alert = alerts[idx];
+  if (!alert) return;
+
+  document.querySelectorAll('.alert-row').forEach(r => r.classList.remove('table-active'));
+  document.querySelectorAll(`[data-idx="${idx}"][data-source="${source}"]`)
+          .forEach(r => r.classList.add('table-active'));
+
+  localStorage.setItem('ai4soar_selected_alert', JSON.stringify({ alert, source }));
+  window.location.href = '/ui/orchestration';
+}
+
+function deleteAlert(idx, source, event) {
+  event.stopPropagation();
+  const arr = source === 'kafka' ? kafkaAlerts : natsAlerts;
+  arr.splice(idx, 1);
+  if (source === 'kafka') renderTable('kafka', kafkaAlerts);
+  else renderNatsTable(natsAlerts);
+}
+
+/* ── Kafka topic display helper ── */
+function updateKafkaTopic() {
+  const sc = document.getElementById('scenario-select').value;
+  document.getElementById('kafka-topic-display').value = `ai4soar.${sc}.1.triage`;
+}
+
+/* ── (Orchestration logic lives in orchestration.html) ── */
+
+/* ── Utility ── */
+function show(id) { document.getElementById(id).classList.remove('d-none'); }
+function hide(id) { document.getElementById(id).classList.add('d-none'); }
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
+
+/* ── Sort-column click ── */
+document.getElementById('hist-thead').addEventListener('click', e => {
+  const th = e.target.closest('.sort-col');
+  if (!th) return;
+  const col = th.dataset.col;
+  if (histState.sortBy === col) {
+    histState.sortDir = histState.sortDir === -1 ? 1 : -1;
+  } else {
+    histState.sortBy  = col;
+    histState.sortDir = -1;
+  }
+  // Update header icons
+  document.querySelectorAll('#hist-thead .sort-icon').forEach(ic => {
+    ic.className = 'bi bi-sort-down ms-1 text-muted sort-icon';
+  });
+  const icon = th.querySelector('.sort-icon');
+  if (icon) {
+    icon.className = `bi ${histState.sortDir === -1 ? 'bi-sort-down' : 'bi-sort-up'} ms-1 text-primary sort-icon`;
+  }
+  loadHistPage(1);
+});
+
+/* ── Auto-load historical on page load (it's the default tab) ── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadTacticOptions();
+  loadHistPage(1);
+});
+document.getElementById('tab-hist-btn').addEventListener('shown.bs.tab', () => {
+  if (!histAlerts.length) {
+    loadTacticOptions();
+    loadHistPage(1);
+  }
+});
+</script>
+{% endblock %}

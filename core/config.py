@@ -14,10 +14,12 @@ class ServerConfig:
     """Server configuration"""
     host: str = "0.0.0.0"
     port: int = 5000
-    
+    debug: bool = False
+
     def __post_init__(self):
-        self.host = os.getenv('SERVER_HOST', self.host)
-        self.port = int(os.getenv('SERVER_PORT', self.port))
+        self.host  = os.getenv('SERVER_HOST', self.host)
+        self.port  = int(os.getenv('SERVER_PORT', self.port))
+        self.debug = os.getenv('SERVER_DEBUG', '').lower() in ('1', 'true', 'yes')
 
 
 @dataclass
@@ -90,15 +92,27 @@ class KafkaConfig:
 class ShuffleConfig:
     """Shuffle SOAR configuration"""
     api_base_url: str = "http://localhost:3001/api/v1"
-    api_token: str = "e8a6e9a9-e18f-4b80-99a1-9f47a2efa4e1"
-    
+    api_token: str = ""
+    # Browser-facing URL (used to build links the user's browser opens directly)
+    ui_base_url: str = "http://localhost:3001"
+    # Default workflow to open until CACAO→Shuffle mapping is in place
+    default_workflow_id: str = ""
+
     def __post_init__(self):
         self.api_base_url = os.getenv('SHUFFLE_API_BASE_URL', self.api_base_url)
         self.api_token = os.getenv('SHUFFLE_API_TOKEN', self.api_token)
-    
+        self.ui_base_url = os.getenv('SHUFFLE_UI_URL', self.ui_base_url)
+        self.default_workflow_id = os.getenv('SHUFFLE_DEFAULT_WORKFLOW_ID', self.default_workflow_id)
+
     def get_headers(self):
         """Get authorization headers for Shuffle API"""
         return {"Authorization": f"Bearer {self.api_token}"}
+
+    def workflow_url(self, workflow_id: str = "") -> str:
+        wid = workflow_id or self.default_workflow_id
+        if wid:
+            return f"{self.ui_base_url}/workflows/{wid}"
+        return f"{self.ui_base_url}/workflows"
 
 
 @dataclass
@@ -185,18 +199,20 @@ class OTRFConfig:
 
 @dataclass
 class ModelConfig:
-    """Trained model paths for Path B similarity learning"""
+    """Trained model paths for Path C ML-based technique classification"""
     model_dir: str = "models"
     knn_path: str = "models/knn_recommender.joblib"
     lr_path: str = "models/lr_recommender.joblib"
     ovr_lr_path: str = "models/ovr_lr_recommender.joblib"
     ovr_svm_path: str = "models/ovr_svm_recommender.joblib"
+    rf_path: str = "models/rf_recommender.joblib"
+    mlp_path: str = "models/mlp_recommender.joblib"
     xgb_path: str = "models/xgb_recommender.joblib"
     label_binarizer_path: str = "models/label_binarizer.joblib"
     label_encoder_path: str = "models/label_encoder.joblib"
     feature_engineer_path: str = "models/feature_engineer.joblib"
-    # Which model to use at inference: "knn" | "lr" | "ovr_lr" | "ovr_svm" | "xgb"
-    active_model: str = "knn"
+    # Which model to use at inference: "knn" | "lr" | "ovr_lr" | "ovr_svm" | "rf" | "mlp" | "xgb"
+    active_model: str = "lr"
 
     def __post_init__(self):
         self.active_model = os.getenv('SIMILARITY_MODEL', self.active_model)
@@ -218,6 +234,95 @@ class MongoDBConfig:
         self.database = os.getenv('MONGODB_DATABASE', self.database)
 
 
+@dataclass
+class LLMConfig:
+    """LLM configuration for Path B (technique attribution) and Path D (CACAO generation)"""
+    provider: str = "openai"                               # "openai" | "anthropic"
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    model: str = "gpt-4o-mini"                            # OpenAI model
+    anthropic_model: str = "claude-haiku-4-5-20251001"    # Anthropic model
+    technique_confidence_threshold: float = 0.70          # min confidence for Path B to proceed
+    max_tokens: int = 1024
+    timeout: float = 30.0
+
+    def __post_init__(self):
+        self.provider = os.getenv("LLM_PROVIDER", self.provider)
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)
+        self.model = os.getenv("LLM_MODEL", self.model)
+        self.anthropic_model = os.getenv("ANTHROPIC_MODEL", self.anthropic_model)
+        self.technique_confidence_threshold = float(
+            os.getenv("LLM_CONFIDENCE_THRESHOLD", str(self.technique_confidence_threshold))
+        )
+
+
+@dataclass
+class PlaybookLibraryConfig:
+    """Operational CACAO playbook library (T-code indexed YAML templates)."""
+    path: str = "playbooks"
+
+    def __post_init__(self):
+        self.path = os.getenv("PLAYBOOK_LIBRARY_PATH", self.path)
+
+
+@dataclass
+class OrchestrationConfig:
+    """Thresholds and tuning knobs for the 3-stage orchestrator."""
+    # Stage 1: Path A confidence that triggers early exit
+    early_exit_threshold: float = 0.85
+    # Stage 2/3: confidence below this falls through to Path D
+    low_confidence_threshold: float = 0.50
+    # Path C discount — tactic-level precision is lower than technique-level
+    path_c_discount: float = 0.85
+    # Bonus when Path B tactic and Path C tactic agree
+    confirmation_bonus: float = 0.10
+
+    def __post_init__(self):
+        self.early_exit_threshold = float(
+            os.getenv("ORCH_EARLY_EXIT_THRESHOLD", str(self.early_exit_threshold))
+        )
+        self.low_confidence_threshold = float(
+            os.getenv("ORCH_LOW_CONF_THRESHOLD", str(self.low_confidence_threshold))
+        )
+        self.path_c_discount = float(
+            os.getenv("ORCH_PATH_C_DISCOUNT", str(self.path_c_discount))
+        )
+        self.confirmation_bonus = float(
+            os.getenv("ORCH_CONFIRMATION_BONUS", str(self.confirmation_bonus))
+        )
+
+
+class ScenarioConfig:
+    """Maps scenario IDs to their Kafka topic triplets (triage, soar, deception)."""
+
+    _TOPICS = {
+        "sc1": ("ai4soar.sc1.1.triage", "ai4soar.sc1.2.soar", "ai4soar.sc1.3.gtm"),
+        "sc2": ("ai4soar.sc2.1.triage", "ai4soar.sc2.2.soar", "ai4soar.sc2.3.gtm"),
+        "sc3": ("ai4soar.sc3.1.triage", "ai4soar.sc3.2.soar", "ai4soar.sc3.3.gtm"),
+    }
+
+    @staticmethod
+    def get_kafka_topics(scenario: str):
+        """Return (triage_topic, soar_topic, deceive_topic) for a scenario ID."""
+        return ScenarioConfig._TOPICS.get(scenario.lower(), (None, None, None))
+
+
+@dataclass
+class NATSConfig:
+    """NATS messaging broker configuration"""
+    host: str = 'localhost'
+    port: int = 4222
+
+    def __post_init__(self):
+        self.host = os.getenv('NATS_HOST', self.host)
+        self.port = int(os.getenv('NATS_PORT', self.port))
+
+    @property
+    def url(self):
+        return f"nats://{self.host}:{self.port}"
+
+
 class Config:
     """Main configuration class"""
 
@@ -227,11 +332,15 @@ class Config:
         self.shuffle = ShuffleConfig()
         self.caldera = CalderaConfig()
         self.wazuh = WazuhConfig()
+        self.nats = NATSConfig()
         self.mongodb = MongoDBConfig()
         self.alert_processing = AlertProcessingConfig()
         self.stix = STIXConfig()
         self.otrf = OTRFConfig()
         self.model = ModelConfig()
+        self.llm = LLMConfig()
+        self.orchestration = OrchestrationConfig()
+        self.playbook_library = PlaybookLibraryConfig()
 
 
 # Global configuration instance

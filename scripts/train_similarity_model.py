@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-Train the similarity-based playbook recommender (Path B).
+Train the Path C similarity-based playbook recommender.
+
+Supports two target modes (--target):
+  technique  Predict MITRE T-code (e.g. T1021.002) — matches Path A/B precision.
+             Uses datasets/eval/path_c_train.jsonl  (DEFAULT).
+  tactic     Predict ATT&CK tactic phase — coarser, legacy mode.
+             Uses datasets/otrf_normalized.jsonl by default.
 
 Pipeline:
-  1. Load OTRF normalized dataset (output of build_otrf_dataset.py)
+  1. Load dataset (eval nested-format or legacy flat format — auto-detected)
   2. Split by SCENARIO (not by event) — critical for generalization testing
   3. Fit TF-IDF + structured feature engineer on training split only
   4. Train five models and compare:
@@ -15,8 +21,9 @@ Pipeline:
   7. Save all models + feature engineer to models/
 
 Run from project root:
-    python3 scripts/train_similarity_model.py
-    python3 scripts/train_similarity_model.py --dataset datasets/otrf_normalized.jsonl
+    python3 scripts/train_similarity_model.py                      # T-codes (recommended)
+    python3 scripts/train_similarity_model.py --target tactic      # legacy tactic mode
+    python3 scripts/train_similarity_model.py --dataset datasets/eval/path_c_train.jsonl
 """
 
 import argparse
@@ -32,10 +39,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 from sklearn.svm import LinearSVC
 
@@ -50,12 +59,15 @@ KNN_PATH     = os.path.join(MODEL_DIR, "knn_recommender.joblib")
 LR_PATH      = os.path.join(MODEL_DIR, "lr_recommender.joblib")
 OVR_LR_PATH  = os.path.join(MODEL_DIR, "ovr_lr_recommender.joblib")
 OVR_SVM_PATH = os.path.join(MODEL_DIR, "ovr_svm_recommender.joblib")
+RF_PATH      = os.path.join(MODEL_DIR, "rf_recommender.joblib")
+MLP_PATH     = os.path.join(MODEL_DIR, "mlp_recommender.joblib")
 XGB_PATH     = os.path.join(MODEL_DIR, "xgb_recommender.joblib")
 FE_PATH      = os.path.join(MODEL_DIR, "feature_engineer.joblib")
 MLB_PATH     = os.path.join(MODEL_DIR, "label_binarizer.joblib")
 LE_PATH      = os.path.join(MODEL_DIR, "label_encoder.joblib")
 
-DEFAULT_DATASET = "datasets/otrf_normalized.jsonl"
+DEFAULT_DATASET_TECHNIQUE = "datasets/eval/path_c_train.jsonl"
+DEFAULT_DATASET_TACTIC    = "datasets/otrf_normalized.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +86,8 @@ def load_records(path: str) -> list:
 
 def records_to_alerts(records: list):
     """
+    Parse legacy flat format (datasets/otrf_normalized.jsonl).
+
     Returns:
         alerts        — list of NormalizedAlert
         single_labels — list[str]        primary tactic per event
@@ -105,6 +119,56 @@ def records_to_alerts(records: list):
         single_labels.append(primary if primary != "unknown" else all_tacs[0])
         multi_labels.append(all_tacs)
         scenario_ids.append(r.get("scenario_id", "unknown"))
+
+    return alerts, single_labels, multi_labels, scenario_ids
+
+
+def records_to_alerts_eval(records: list, target: str = "technique"):
+    """
+    Parse eval nested format (datasets/eval/path_c_train.jsonl).
+
+    Each record has {"features": {...}, "ground_truth": {...}}.
+    target="technique"  → labels are T-codes  (e.g. "T1021.002")
+    target="tactic"     → labels are tactics  (e.g. "lateral-movement")
+
+    Returns:
+        alerts        — list of NormalizedAlert
+        single_labels — list[str]        primary label per event
+        multi_labels  — list[list[str]]  all labels per event
+        scenario_ids  — list[str]
+    """
+    alerts, single_labels, multi_labels, scenario_ids = [], [], [], []
+    for r in records:
+        feat = r.get("features", {})
+        gt   = r.get("ground_truth", {})
+
+        if target == "technique":
+            techniques = [t for t in gt.get("technique_ids", []) if t]
+            if not techniques:
+                continue
+            primary    = techniques[0]
+            all_labels = techniques
+        else:
+            primary    = gt.get("primary_tactic", "unknown")
+            all_labels = [t for t in gt.get("all_tactics", []) if t]
+            if not all_labels or primary == "unknown":
+                continue
+
+        alerts.append(NormalizedAlert(
+            raw_text=feat.get("text", ""),
+            event_type=feat.get("event_type", "unknown"),
+            severity=float(feat.get("severity", 0.0)),
+            src_is_private=bool(feat.get("src_is_private", True)),
+            dst_is_private=True,          # not present in eval features
+            src_port_range="unknown",     # not present in eval features
+            has_user=bool(feat.get("has_user", False)),
+            has_network=bool(feat.get("has_network", False)),
+            has_process=bool(feat.get("has_process", False)),
+            source_format=feat.get("source_format", "unknown"),
+        ))
+        single_labels.append(primary)
+        multi_labels.append(all_labels)
+        scenario_ids.append(gt.get("scenario_id", "unknown"))
 
     return alerts, single_labels, multi_labels, scenario_ids
 
@@ -236,31 +300,43 @@ def print_summary(results: Dict[str, Dict[str, float]]) -> None:
 # Main training pipeline
 # ---------------------------------------------------------------------------
 
-def train(dataset_path: str) -> None:
+def _is_eval_format(records: list) -> bool:
+    """Auto-detect nested eval format vs legacy flat format."""
+    return bool(records) and "features" in records[0] and "ground_truth" in records[0]
+
+
+def train(dataset_path: str, target: str = "technique") -> None:
     if not os.path.exists(dataset_path):
-        logger.error(
-            f"Dataset not found: {dataset_path}\n"
-            "Run: python3 scripts/build_otrf_dataset.py"
-        )
+        logger.error(f"Dataset not found: {dataset_path}")
         sys.exit(1)
 
-    logger.info(f"Loading dataset from {dataset_path}")
+    logger.info(f"Loading dataset from {dataset_path}  (target={target})")
     records = load_records(dataset_path)
     logger.info(f"  {len(records)} records loaded")
 
-    alerts, single_labels, multi_labels, scenario_ids = records_to_alerts(records)
+    if _is_eval_format(records):
+        logger.info("  Detected eval nested format (features + ground_truth)")
+        alerts, single_labels, multi_labels, scenario_ids = records_to_alerts_eval(
+            records, target=target
+        )
+    else:
+        logger.info("  Detected legacy flat format")
+        alerts, single_labels, multi_labels, scenario_ids = records_to_alerts(records)
+
     logger.info(f"  {len(alerts)} valid records after filtering")
 
     if len(alerts) < 20:
         logger.error("Dataset too small — need at least 20 events.")
         sys.exit(1)
 
-    logger.info("\nLabel distribution (primary tactic):")
-    for tactic, count in Counter(single_labels).most_common():
-        bar = "█" * (count // 20)
-        logger.info(f"  {tactic:<30} {count:>5}  {bar}")
+    label_noun = "T-code" if target == "technique" else "tactic"
+    logger.info(f"\nLabel distribution (primary {label_noun}):")
+    bar_scale = max(1, max(Counter(single_labels).values()) // 40)
+    for label, count in Counter(single_labels).most_common():
+        bar = "█" * (count // bar_scale)
+        logger.info(f"  {label:<30} {count:>5}  {bar}")
     multi_count = sum(1 for ml in multi_labels if len(ml) > 1)
-    logger.info(f"\n  Events with >1 tactic label: {multi_count} "
+    logger.info(f"\n  Events with >1 {label_noun} label: {multi_count} "
                 f"({100*multi_count/len(alerts):.1f}%)")
 
     tr_a, tr_sl, tr_ml, te_a, te_sl, te_ml = split_by_scenario(
@@ -344,6 +420,47 @@ def train(dataset_path: str) -> None:
     results["OvR-SVM"] = evaluate_multi("OvR-SVM-balanced", ovr_svm, mlb, X_test, te_sl, te_ml)
 
     # =========================================================
+    # RANDOM FOREST
+    # =========================================================
+    logger.info("\n" + "=" * 55)
+    logger.info("ENSEMBLE MODELS")
+    logger.info("=" * 55)
+
+    logger.info("\nTraining RandomForest (n=300, class_weight=balanced_subsample)...")
+    rf = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=None,
+        min_samples_leaf=1,
+        class_weight="balanced_subsample",
+        random_state=42,
+        n_jobs=-1,
+    )
+    rf.fit(X_train, tr_sl)
+    results["RF"] = evaluate_single("RandomForest", rf, X_test, te_sl, te_ml)
+
+    # =========================================================
+    # MLP
+    # =========================================================
+    logger.info("\n" + "=" * 55)
+    logger.info("NEURAL NETWORK")
+    logger.info("=" * 55)
+
+    logger.info("\nTraining MLP (256-128 hidden, ReLU, Adam, early stopping)...")
+    mlp = MLPClassifier(
+        hidden_layer_sizes=(256, 128),
+        activation="relu",
+        solver="adam",
+        learning_rate_init=1e-3,
+        max_iter=200,
+        early_stopping=True,
+        validation_fraction=0.1,
+        n_iter_no_change=15,
+        random_state=42,
+    )
+    mlp.fit(X_train, tr_sl)
+    results["MLP"] = evaluate_single("MLP", mlp, X_test, te_sl, te_ml)
+
+    # =========================================================
     # XGBOOST
     # =========================================================
     logger.info("\n" + "=" * 55)
@@ -398,6 +515,8 @@ def train(dataset_path: str) -> None:
     joblib.dump(lr,      LR_PATH)
     joblib.dump(ovr_lr,  OVR_LR_PATH)
     joblib.dump(ovr_svm, OVR_SVM_PATH)
+    joblib.dump(rf,      RF_PATH)
+    joblib.dump(mlp,     MLP_PATH)
     if xgb is not None:
         joblib.dump(xgb, XGB_PATH)
     joblib.dump(mlb, MLB_PATH)
@@ -411,7 +530,21 @@ def train(dataset_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train similarity model")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET)
-    args = parser.parse_args()
-    train(args.dataset)
+    parser = argparse.ArgumentParser(description="Train Path C similarity model")
+    parser.add_argument(
+        "--target",
+        choices=["technique", "tactic"],
+        default="technique",
+        help="Classification target: T-code (recommended) or tactic phase (legacy). Default: technique",
+    )
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Path to training JSONL. Default: datasets/eval/path_c_train.jsonl (technique) "
+             "or datasets/otrf_normalized.jsonl (tactic)",
+    )
+    args   = parser.parse_args()
+    ds     = args.dataset or (
+        DEFAULT_DATASET_TECHNIQUE if args.target == "technique" else DEFAULT_DATASET_TACTIC
+    )
+    train(ds, target=args.target)
