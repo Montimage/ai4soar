@@ -1,0 +1,109 @@
+id: pb-t1055-respond-process-injection
+name: "Respond to Process Injection"
+version: "1.0"
+techniques:
+  - T1055
+  - T1055.001
+  - T1055.002
+  - T1055.012
+tactics:
+  - privilege-escalation
+  - defense-evasion
+description: "Kill the injecting process, dump memory for forensics, and quarantine the host user session"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Host where injection was detected"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Host IP address"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.srcuser
+      - data.srcuser
+    description: "User running the injecting process"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--c4f8d2e1-5a9b-4c3d-8e1f-2b6a0c4d7e9f"
+  name: "Respond to Process Injection on {{hostname}}"
+  description: "Kill the injecting process on {{hostname}}, collect forensic memory dump, lock user session"
+  playbook_types:
+    - investigation
+    - remediation
+    - notification
+  workflow_start: "step--kill-injector"
+  workflow:
+
+    step--kill-injector:
+      type: action
+      name: "Kill injecting process on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "ps aux --sort=-%cpu | head -20 > /tmp/ai4soar_procs_before.txt;
+             pkill -9 -f 'VirtualAlloc\|WriteProcessMemory\|CreateRemoteThread' 2>/dev/null || true"
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED injector on {{hostname}} user={{username}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--memory-dump"
+      on_failure: "step--lock-session"
+
+    step--memory-dump:
+      type: action
+      name: "Collect memory dump for forensics"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "which avml 2>/dev/null && avml /tmp/ai4soar_memdump_$(date +%s).lime || true"
+      on_completion: "step--lock-session"
+
+    step--lock-session:
+      type: action
+      name: "Lock user session for {{username}}"
+      commands:
+        - type: bash
+          command: "usermod -L {{username}} 2>/dev/null || true"
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "pkill -KILL -u {{username}} 2>/dev/null || true"
+      on_success: "step--create-ticket"
+      on_failure: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Create process injection incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "Process Injection detected on {{hostname}}",
+              "severity":  "high",
+              "technique": "T1055",
+              "hostname":  "{{hostname}}",
+              "src_ip":    "{{src_ip}}",
+              "username":  "{{username}}"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

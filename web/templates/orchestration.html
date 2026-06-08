@@ -205,7 +205,7 @@ function renderOrchResult(r) {
   const llmSection = r.llm_reasoning ? `
     <div class="mt-3 mb-2">
       <div class="small text-muted mb-1"><i class="bi bi-chat-left-text me-1"></i>LLM Reasoning</div>
-      <div class="p-2 rounded small text-muted" style="background:#0d1117;border-left:3px solid #30363d">
+      <div class="p-2 rounded small" style="background:#1e3a2e;border-left:3px solid #3fb950;color:#acd8bc">
         ${escHtml(r.llm_reasoning)}
       </div>
     </div>` : '';
@@ -227,16 +227,16 @@ function renderOrchResult(r) {
     const filled  = pb.parameters_filled  || {};
     const missing = pb.parameters_missing || [];
     const filledHtml = Object.entries(filled).map(([k, v]) => `
-      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-0"
-            style="background:#0d1117;border:1px solid #30363d;border-radius:4px;font-size:.7rem">
-        <span class="text-muted">${escHtml(k)}</span>
-        <span class="text-info font-monospace">${escHtml(String(v))}</span>
+      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
+            style="background:#1a4a7a;border:1px solid #4a9eff;border-radius:4px;font-size:.7rem">
+        <span style="color:#b8d4f0">${escHtml(k)}</span>
+        <span class="font-monospace" style="color:#ffffff">${escHtml(String(v))}</span>
       </span>`).join('');
     const missingHtml = missing.map(m => `
-      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-0"
-            style="background:#0d1117;border:1px solid #6e3030;border-radius:4px;font-size:.7rem">
-        <span class="text-danger">${escHtml(m)}</span>
-        <span class="text-muted font-monospace">?</span>
+      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
+            style="background:#7a1a1a;border:1px solid #ff6b6b;border-radius:4px;font-size:.7rem">
+        <span style="color:#ffb8b8">${escHtml(m)}</span>
+        <span class="font-monospace" style="color:#ffffff">?</span>
       </span>`).join('');
     const paramsSection = (filledHtml || missingHtml) ? `
       <div class="mt-2">

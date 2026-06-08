@@ -1,0 +1,109 @@
+id: pb-t1071-block-c2-channel
+name: "Block C2 Communication over HTTP/S"
+version: "1.0"
+techniques:
+  - T1071
+  - T1071.001
+  - T1572
+tactics:
+  - command-and-control
+description: "Block outbound C2 traffic at the perimeter, isolate the beaconing host, and extract IOCs for threat intel"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "Internal host making C2 connections"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Beaconing host name"
+  dst_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.dstip
+      - data.dstip
+      - dstip
+    description: "External C2 server IP to block"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--e6b0f4a3-7c1d-4e5f-0a3b-4d8c2e6f9a1b"
+  name: "Block C2 from {{src_ip}} to {{dst_ip}}"
+  description: "Block outbound C2 traffic from {{src_ip}} to {{dst_ip}}, collect netstat/connection evidence"
+  playbook_types:
+    - prevention
+    - remediation
+    - investigation
+  workflow_start: "step--block-outbound"
+  workflow:
+
+    step--block-outbound:
+      type: action
+      name: "Block outbound C2 traffic from {{src_ip}}"
+      commands:
+        - type: bash
+          command: >
+            iptables -I OUTPUT -s {{src_ip}} -d {{dst_ip}} -j DROP &&
+            iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED C2 {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--collect-connections"
+      on_failure: "step--collect-connections"
+
+    step--collect-connections:
+      type: action
+      name: "Collect active connection evidence from {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "netstat -antp 2>/dev/null > /tmp/ai4soar_netstat_{{hostname}}.txt;
+             ss -antp 2>/dev/null >> /tmp/ai4soar_netstat_{{hostname}}.txt"
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "ps auxf > /tmp/ai4soar_procs_{{hostname}}.txt 2>/dev/null || true"
+      on_success: "step--dns-block"
+      on_failure: "step--create-ticket"
+
+    step--dns-block:
+      type: action
+      name: "Add C2 IP to DNS blocklist"
+      commands:
+        - type: bash
+          command: "echo '0.0.0.0 {{dst_ip}}' >> /etc/hosts 2>/dev/null || true"
+      on_completion: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Create C2 beaconing incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "C2 Beaconing from {{hostname}} ({{src_ip}}) to {{dst_ip}}",
+              "severity":  "high",
+              "technique": "T1071",
+              "hostname":  "{{hostname}}",
+              "src_ip":    "{{src_ip}}",
+              "dst_ip":    "{{dst_ip}}"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

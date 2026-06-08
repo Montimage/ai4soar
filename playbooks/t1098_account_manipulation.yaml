@@ -1,0 +1,108 @@
+id: pb-t1098-respond-account-manipulation
+name: "Respond to Account Manipulation"
+version: "1.0"
+techniques:
+  - T1098
+  - T1098.001
+  - T1136
+  - T1136.001
+  - T1136.002
+tactics:
+  - persistence
+description: "Revert unauthorized account changes, remove rogue accounts or SSH keys, audit group membership, and alert the SOC"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Host where account manipulation occurred"
+  username:
+    type: string
+    required: true
+    sources:
+      - _source.data.dstuser
+      - data.dstuser
+      - _source.data.srcuser
+      - data.srcuser
+    description: "Account that was manipulated or created"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "IP of the actor performing the manipulation"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--f7c1a5b4-8d2e-4f6a-1b4c-5e9d3f7a0b2c"
+  name: "Respond to Account Manipulation of {{username}} on {{hostname}}"
+  description: "Lock {{username}}, audit sudo/admin group membership, purge unauthorized SSH keys on {{hostname}}"
+  playbook_types:
+    - remediation
+    - investigation
+    - notification
+  workflow_start: "step--lock-account"
+  workflow:
+
+    step--lock-account:
+      type: action
+      name: "Lock manipulated account {{username}}"
+      commands:
+        - type: bash
+          command: "usermod -L {{username}} 2>/dev/null || true"
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] LOCKED {{username}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--audit-groups"
+      on_failure: "step--audit-groups"
+
+    step--audit-groups:
+      type: action
+      name: "Audit privileged group membership on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "getent group sudo wheel admin 2>/dev/null > /tmp/ai4soar_groups_{{hostname}}.txt;
+             cat /etc/passwd | awk -F: '\$3==0{print \$1}' >> /tmp/ai4soar_groups_{{hostname}}.txt"
+      on_success: "step--purge-ssh-keys"
+      on_failure: "step--create-ticket"
+
+    step--purge-ssh-keys:
+      type: action
+      name: "Purge unauthorized SSH authorized_keys for {{username}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "cp /home/{{username}}/.ssh/authorized_keys /tmp/ai4soar_bak_keys_{{username}}.txt 2>/dev/null || true;
+             > /home/{{username}}/.ssh/authorized_keys 2>/dev/null || true"
+      on_completion: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Create account manipulation incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "Account Manipulation: {{username}} on {{hostname}}",
+              "severity":  "high",
+              "technique": "T1098",
+              "hostname":  "{{hostname}}",
+              "username":  "{{username}}",
+              "src_ip":    "{{src_ip}}"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

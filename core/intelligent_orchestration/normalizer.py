@@ -95,6 +95,8 @@ class WazuhNormalizer(BaseNormalizer):
         "firewall": "network",
         "ids": "network",
         "network": "network",
+        "attack": "network",    # MMT alert category
+        "anomaly": "network",   # MMT alert category
         "process": "process",
         "syscheck": "file",
         "rootcheck": "process",
