@@ -1,0 +1,84 @@
+id: pb-t1566-quarantine-phishing
+name: "Quarantine Phishing Email"
+version: "1.0"
+techniques:
+  - T1566
+  - T1566.001
+  - T1566.002
+tactics:
+  - initial-access
+description: "Quarantine the phishing email, block the sender domain, and notify the recipient"
+
+parameters:
+  email_sender:
+    type: string
+    required: true
+    sources:
+      - _source.data.email.from
+      - data.email.from
+      - data.srcuser
+    description: "Phishing email sender address"
+  email_subject:
+    type: string
+    required: false
+    sources:
+      - _source.data.email.subject
+      - data.email.subject
+    description: "Email subject line"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.dstuser
+      - data.dstuser
+    description: "Recipient username"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Sender mail server IP"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--91525dcf-5146-4a38-b2f6-edd3acaa96f7"
+  name: "Quarantine Phishing from {{email_sender}}"
+  description: "Quarantine email from {{email_sender}} to {{username}} and block sender domain"
+  playbook_types:
+    - remediation
+    - prevention
+    - notification
+  workflow_start: "step--quarantine-email"
+  workflow:
+    step--quarantine-email:
+      type: action
+      name: "Quarantine the phishing email"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/email/quarantine"
+          headers:
+            Content-Type: "application/json"
+          body: '{"sender":"{{email_sender}}","recipient":"{{username}}","subject":"{{email_subject}}"}'
+      on_success: "step--block-sender"
+      on_failure: "step--notify"
+    step--block-sender:
+      type: action
+      name: "Block sender domain in mail filter"
+      commands:
+        - type: bash
+          command: "postsuper -d ALL deferred 2>/dev/null; echo '{{email_sender}}' >> /etc/postfix/sender_block"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Notify recipient and SOC"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Phishing Email from {{email_sender}}","severity":"high","recipient":"{{username}}","subject":"{{email_subject}}","technique":"T1566"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

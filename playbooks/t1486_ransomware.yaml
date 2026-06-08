@@ -1,0 +1,108 @@
+id: pb-t1486-contain-ransomware
+name: "Contain Ransomware Encryption"
+version: "1.0"
+techniques:
+  - T1486
+  - T1490
+tactics:
+  - impact
+description: "Immediately isolate the infected host, kill encryption processes, snapshot affected volumes, and open a P1 incident"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Infected host to isolate"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "IP of the infected host"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.srcuser
+      - data.srcuser
+    description: "User context running the encryption process"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--b3e7c1a2-4f8d-4e2b-9c0a-1d5f7e3b8a6c"
+  name: "Contain Ransomware on {{hostname}}"
+  description: "Isolate {{hostname}} from the network, kill known encryption processes, and initiate recovery"
+  playbook_types:
+    - remediation
+    - prevention
+    - notification
+  workflow_start: "step--isolate-host"
+  workflow:
+
+    step--isolate-host:
+      type: action
+      name: "Network-isolate {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            iptables -I FORWARD -s {{src_ip}} -j DROP &&
+            iptables -I FORWARD -d {{src_ip}} -j DROP &&
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] ISOLATED {{hostname}} ({{src_ip}})" >> /var/log/ai4soar_blocks.log
+      on_success: "step--kill-processes"
+      on_failure: "step--kill-processes"
+
+    step--kill-processes:
+      type: action
+      name: "Kill known ransomware encryption processes on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "for proc in vssadmin wbadmin bcdedit cipher; do
+               pkill -9 -f \"\$proc\" 2>/dev/null || true;
+             done"
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED enc processes on {{hostname}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--snapshot-volumes"
+      on_failure: "step--create-ticket"
+
+    step--snapshot-volumes:
+      type: action
+      name: "Snapshot affected volumes for forensics"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "vssadmin create shadow /for=C: 2>/dev/null || true"
+      on_completion: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Open P1 ransomware incident"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "RANSOMWARE detected on {{hostname}}",
+              "severity":  "critical",
+              "technique": "T1486",
+              "hostname":  "{{hostname}}",
+              "src_ip":    "{{src_ip}}",
+              "username":  "{{username}}",
+              "priority":  "P1"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

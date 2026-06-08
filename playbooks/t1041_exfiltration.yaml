@@ -1,0 +1,131 @@
+id: pb-t1041-block-exfiltration
+name: "Block Data Exfiltration over C2 Channel"
+version: "1.0"
+techniques:
+  - T1041
+  - T1048
+  - T1048.003
+  - T1020
+tactics:
+  - exfiltration
+description: "Block outbound exfiltration traffic, terminate the responsible process, preserve transfer logs for forensics"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "Internal host exfiltrating data"
+  dst_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.dstip
+      - data.dstip
+      - dstip
+    description: "External destination receiving the exfiltrated data"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Hostname of the exfiltrating host"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.srcuser
+      - data.srcuser
+    description: "User context performing the transfer"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--b9e3c7d6-0f4a-4b8c-3d6e-7a1b5c9d2e4f"
+  name: "Block Exfiltration from {{src_ip}} to {{dst_ip}}"
+  description: "Block outbound data transfer from {{src_ip}} to {{dst_ip}}, collect transfer evidence, open incident"
+  playbook_types:
+    - prevention
+    - remediation
+    - investigation
+    - notification
+  workflow_start: "step--block-transfer"
+  workflow:
+
+    step--block-transfer:
+      type: action
+      name: "Block outbound exfiltration traffic from {{src_ip}}"
+      commands:
+        - type: bash
+          command: >
+            iptables -I OUTPUT  -s {{src_ip}} -d {{dst_ip}} -j DROP &&
+            iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED exfil {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--collect-evidence"
+      on_failure: "step--collect-evidence"
+
+    step--collect-evidence:
+      type: action
+      name: "Collect network transfer evidence from {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "netstat -antp 2>/dev/null > /tmp/ai4soar_exfil_net_{{hostname}}.txt;
+             ss -antp 2>/dev/null >> /tmp/ai4soar_exfil_net_{{hostname}}.txt"
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "lsof -i 2>/dev/null | grep ESTABLISHED >> /tmp/ai4soar_exfil_net_{{hostname}}.txt || true"
+      on_success: "step--terminate-process"
+      on_failure: "step--create-ticket"
+
+    step--terminate-process:
+      type: action
+      name: "Terminate exfiltration process on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "fuser -k {{dst_ip}} 2>/dev/null || true;
+             pkill -9 -f 'curl\|wget\|nc\|ncat\|socat\|scp\|ftp' 2>/dev/null || true"
+      on_success: "step--lock-user"
+      on_failure: "step--create-ticket"
+
+    step--lock-user:
+      type: action
+      name: "Lock user account {{username}}"
+      commands:
+        - type: bash
+          command: "usermod -L {{username}} 2>/dev/null || true"
+      on_completion: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Create exfiltration incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "Data Exfiltration from {{hostname}} ({{src_ip}}) to {{dst_ip}}",
+              "severity":  "critical",
+              "technique": "T1041",
+              "hostname":  "{{hostname}}",
+              "src_ip":    "{{src_ip}}",
+              "dst_ip":    "{{dst_ip}}",
+              "username":  "{{username}}"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

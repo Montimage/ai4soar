@@ -1,0 +1,482 @@
+{% extends "base.html" %}
+{% block title %}Orchestration{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0 fw-bold"><i class="bi bi-cpu text-primary me-2"></i>AI Orchestration</h4>
+  <a href="/ui/alerts" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Alerts
+  </a>
+</div>
+
+<!-- Idle: no alert loaded -->
+<div id="orch-no-alert" class="text-center py-5 text-muted">
+  <i class="bi bi-cpu fs-1 d-block mb-2 opacity-25"></i>
+  <p class="mb-2">No alert selected.</p>
+  <a href="/ui/alerts" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-bell me-1"></i>Go to Alerts
+  </a>
+</div>
+
+<!-- Panel: alert loaded -->
+<div id="orch-panel" class="d-none">
+  <div class="row g-3">
+
+    <!-- Alert detail card -->
+    <div class="col-12 col-lg-5">
+      <div class="card h-100">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small"><i class="bi bi-bell me-1 text-warning"></i>Selected Alert</span>
+          <div class="d-flex gap-2">
+            <span class="badge bg-secondary small" id="alert-source-badge"></span>
+            <button class="btn btn-sm btn-link text-secondary p-0 text-decoration-none"
+                    onclick="clearSelection()" title="Clear selection">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+        <div class="card-body pb-2">
+          <dl class="row mb-0 small" id="alert-meta"></dl>
+        </div>
+        <div class="px-3 pb-2">
+          <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
+             data-bs-toggle="collapse" data-bs-target="#raw-json-collapse">
+            <i class="bi bi-code-slash me-1"></i>Raw JSON
+          </a>
+        </div>
+        <div class="collapse" id="raw-json-collapse">
+          <div class="px-3 pb-3">
+            <pre class="json-viewer" id="raw-json"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommendation card -->
+    <div class="col-12 col-lg-7">
+      <div class="card h-100">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold small">
+            <i class="bi bi-diagram-3 me-1 text-primary"></i>Recommendation Engine
+          </span>
+          <button class="btn btn-primary btn-sm" onclick="runOrch()" id="run-btn">
+            <i class="bi bi-play-fill me-1"></i>Run Orchestration
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="orch-idle" class="text-center py-5 text-muted">
+            <i class="bi bi-play-circle fs-1 d-block mb-2 opacity-25"></i>
+            Click <strong>Run Orchestration</strong> to analyse this alert
+          </div>
+          <div id="orch-spinner" class="text-center py-5 d-none">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <div class="text-muted small">Running 3-stage orchestration pipeline…</div>
+          </div>
+          <div id="orch-result" class="d-none"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Shuffle execution modal ── -->
+<div class="modal fade" id="shuffleModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-play-circle-fill text-success me-2"></i>Execute on Shuffle
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-1">Recommended playbook:</p>
+        <p class="fw-semibold mb-3" id="shuffle-context"></p>
+        <div id="shuffle-body">
+          <div class="text-center py-3">
+            <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+            <small class="text-muted">Loading Shuffle config…</small>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Load alert from localStorage ── */
+let selectedAlert  = null;
+let selectedSource = null;
+
+(function init() {
+  try {
+    const stored = localStorage.getItem('ai4soar_selected_alert');
+    if (!stored) return;
+    const { alert, source } = JSON.parse(stored);
+    selectedAlert  = alert;
+    selectedSource = source;
+    renderAlertPanel();
+  } catch (_) {}
+})();
+
+function renderAlertPanel() {
+  if (!selectedAlert) return;
+  const f = extractAlertFields(selectedAlert);
+
+  document.getElementById('orch-no-alert').classList.add('d-none');
+  document.getElementById('orch-panel').classList.remove('d-none');
+
+  document.getElementById('alert-source-badge').textContent = selectedSource || '';
+  document.getElementById('alert-meta').innerHTML = `
+    <dt class="col-sm-4 text-muted">Timestamp</dt>
+    <dd class="col-sm-8 font-monospace small">${escHtml(String(f.timestamp))}</dd>
+    <dt class="col-sm-4 text-muted">Severity</dt>
+    <dd class="col-sm-8">${severityBadge(f.severityLabel)} <code class="small">${f.severity}</code></dd>
+    <dt class="col-sm-4 text-muted">Description</dt>
+    <dd class="col-sm-8">${escHtml(f.description)}</dd>
+    <dt class="col-sm-4 text-muted">Technique</dt>
+    <dd class="col-sm-8 font-monospace text-info small">${escHtml(f.technique)}</dd>
+    <dt class="col-sm-4 text-muted">Source IP</dt>
+    <dd class="col-sm-8 font-monospace small">${f.src_ip}</dd>
+    <dt class="col-sm-4 text-muted">Dest IP</dt>
+    <dd class="col-sm-8 font-monospace small">${f.dst_ip}</dd>`;
+
+  document.getElementById('raw-json').textContent =
+    JSON.stringify(selectedAlert, null, 2);
+}
+
+function clearSelection() {
+  localStorage.removeItem('ai4soar_selected_alert');
+  document.getElementById('orch-panel').classList.add('d-none');
+  document.getElementById('orch-no-alert').classList.remove('d-none');
+  selectedAlert = selectedSource = null;
+}
+
+/* ── Orchestration ── */
+async function runOrch() {
+  if (!selectedAlert) return;
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  show('orch-spinner'); hide('orch-idle'); hide('orch-result');
+  try {
+    const result = await apiFetch('/recommend', {
+      method: 'POST',
+      body: JSON.stringify({ alert: selectedAlert, k: 5 }),
+    });
+    renderOrchResult(result);
+  } catch (e) {
+    document.getElementById('orch-result').innerHTML =
+      `<div class="alert alert-danger">Orchestration failed: ${escHtml(e.message)}</div>`;
+    show('orch-result');
+  } finally {
+    hide('orch-spinner');
+    btn.disabled = false;
+  }
+}
+
+function renderOrchResult(r) {
+  const pathBadges = (r.paths_used || [])
+    .map(p => `<span class="path-badge me-1">Path ${p}</span>`).join('');
+
+  const techBadges = (r.technique_ids || [])
+    .map((id, i) => {
+      const name = (r.technique_names || [])[i] || '';
+      return `<span class="badge font-monospace me-1 mb-1 text-dark" style="background:#e2e8f0;border:1px solid #94a3b8"
+               style="font-size:.7rem">${id}${name ? ' · ' + name : ''}</span>`;
+    }).join('');
+
+  const tacticBadges = (r.tactics || [])
+    .map(t => `<span class="badge bg-secondary me-1 mb-1">${t}</span>`).join('');
+
+  let actionBadges = '';
+  if (r.auto_executable)
+    actionBadges += '<span class="badge bg-success me-1"><i class="bi bi-check-circle me-1"></i>Auto-executable</span>';
+  if (r.requires_human_approval)
+    actionBadges += '<span class="badge bg-warning text-dark me-1"><i class="bi bi-person-check me-1"></i>Needs Approval</span>';
+  if (r.requires_human_review)
+    actionBadges += '<span class="badge bg-danger me-1"><i class="bi bi-eye me-1"></i>Needs Review</span>';
+
+  const llmSection = r.llm_reasoning ? `
+    <div class="mt-3 mb-2">
+      <div class="small text-muted mb-1"><i class="bi bi-chat-left-text me-1"></i>LLM Reasoning</div>
+      <div class="p-2 rounded small" style="background:#1e3a2e;border-left:3px solid #3fb950;color:#acd8bc">
+        ${escHtml(r.llm_reasoning)}
+      </div>
+    </div>` : '';
+
+  const cacaoSection = r.cacao_playbook ? `
+    <div class="mt-2">
+      <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
+         data-bs-toggle="collapse" data-bs-target="#cacao-collapse">
+        <i class="bi bi-code-slash me-1"></i>Generated CACAO 2.0 Playbook
+      </a>
+      <div class="collapse mt-2" id="cacao-collapse">
+        <pre class="json-viewer">${escHtml(JSON.stringify(r.cacao_playbook, null, 2))}</pre>
+      </div>
+    </div>` : '';
+
+  const playbooks = r.playbooks || [];
+  const pbCards = playbooks.map((pb, i) => {
+    const slug = `pb-${i}-${pb.id}`;
+    const filled  = pb.parameters_filled  || {};
+    const missing = pb.parameters_missing || [];
+    const filledHtml = Object.entries(filled).map(([k, v]) => `
+      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
+            style="background:#1a4a7a;border:1px solid #4a9eff;border-radius:4px;font-size:.7rem">
+        <span style="color:#b8d4f0">${escHtml(k)}</span>
+        <span class="font-monospace" style="color:#ffffff">${escHtml(String(v))}</span>
+      </span>`).join('');
+    const missingHtml = missing.map(m => `
+      <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
+            style="background:#7a1a1a;border:1px solid #ff6b6b;border-radius:4px;font-size:.7rem">
+        <span style="color:#ffb8b8">${escHtml(m)}</span>
+        <span class="font-monospace" style="color:#ffffff">?</span>
+      </span>`).join('');
+    const paramsSection = (filledHtml || missingHtml) ? `
+      <div class="mt-2">
+        <div class="text-muted mb-1" style="font-size:.65rem;text-transform:uppercase;letter-spacing:.5px">
+          <i class="bi bi-sliders me-1"></i>Parameters
+        </div>
+        <div class="d-flex flex-wrap">${filledHtml}${missingHtml}</div>
+        ${missing.length ? `<div class="text-warning mt-1" style="font-size:.68rem">
+          <i class="bi bi-exclamation-triangle me-1"></i>${missing.length} parameter(s) not found in alert IoCs
+        </div>` : ''}
+      </div>` : '';
+
+    const cacaoObj  = pb.cacao || null;
+    const cacaoHtml = cacaoObj ? `
+      <div class="mt-2">
+        <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
+           style="font-size:.75rem"
+           data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">
+          <i class="bi bi-code-slash me-1"></i>View CACAO 2.0
+        </a>
+        <div class="collapse mt-1" id="cacao-${slug}">
+          <pre class="json-viewer" style="max-height:320px;overflow-y:auto;font-size:.7rem">${escHtml(JSON.stringify(cacaoObj, null, 2))}</pre>
+        </div>
+      </div>` : '';
+
+    return `
+    <div class="playbook-card mb-2">
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div class="overflow-hidden">
+          <div class="fw-semibold small">${escHtml(pb.name || pb.id)}</div>
+          ${pb.description ? `<div class="text-muted" style="font-size:.75rem">${escHtml(pb.description)}</div>` : ''}
+          <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
+        </div>
+        <button class="btn btn-success btn-sm flex-shrink-0"
+                onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
+          <i class="bi bi-play-fill me-1"></i>Execute
+        </button>
+      </div>
+      ${paramsSection}
+      ${cacaoHtml}
+    </div>`;
+  }).join('');
+
+  document.getElementById('orch-result').innerHTML = `
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      ${tierBadge(r.confidence_tier, r.confidence)}
+      ${pathBadges}
+      ${actionBadges}
+    </div>
+    ${techBadges   ? `<div class="mb-2">${techBadges}</div>` : ''}
+    ${tacticBadges ? `<div class="mb-3">${tacticBadges}</div>` : ''}
+    ${llmSection}
+    ${cacaoSection}
+    <div class="mt-3">
+      <div class="small text-muted mb-2">
+        <i class="bi bi-journal-code me-1"></i>
+        Recommended Playbooks
+        <span class="badge bg-secondary ms-1">${playbooks.length}</span>
+      </div>
+      ${playbooks.length
+          ? pbCards
+          : '<div class="text-muted small">No matching playbooks found for this alert.</div>'}
+    </div>`;
+  show('orch-result');
+}
+
+/* ── Shuffle modal ── */
+async function openShuffleModal(recId, recName) {
+  document.getElementById('shuffle-context').textContent = recName || recId;
+  document.getElementById('shuffle-body').innerHTML = `
+    <div class="text-center py-3">
+      <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+      <small class="text-muted">Loading Shuffle config…</small>
+    </div>`;
+
+  const modal = new bootstrap.Modal(document.getElementById('shuffleModal'));
+  modal.show();
+
+  try {
+    const cfg = await apiFetch('/shuffle/config');
+    renderShuffleOpen(cfg, recName || recId);
+  } catch (e) {
+    document.getElementById('shuffle-body').innerHTML =
+      `<div class="text-danger small">Failed to load Shuffle config: ${escHtml(e.message)}</div>`;
+  }
+}
+
+let _shuffleApiBase = '';
+
+function renderShuffleOpen(cfg, recName) {
+  _shuffleApiBase = (cfg.ui_url || '').replace(/\/$/, '') + '/api/v1';
+  const url = cfg.default_workflow_url || cfg.ui_url + '/workflows';
+  const wid = cfg.default_workflow_id || '';
+  document.getElementById('shuffle-body').innerHTML = `
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <span class="badge bg-primary rounded-pill">1</span>
+      <span class="small fw-semibold">Open &amp; run the workflow in Shuffle</span>
+    </div>
+    ${wid ? `<div class="mb-2 ps-4">
+      <span class="text-muted" style="font-size:.75rem">Workflow ID: </span>
+      <code style="font-size:.75rem">${escHtml(wid)}</code>
+    </div>` : ''}
+    <a href="${escHtml(url)}" target="_blank" rel="noopener" class="btn btn-success btn-sm mb-4 ms-4">
+      <i class="bi bi-box-arrow-up-right me-1"></i>Open in Shuffle
+    </a>
+    <hr>
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="badge bg-secondary rounded-pill">2</span>
+      <span class="small fw-semibold">Paste the execution URL or ID to fetch results</span>
+    </div>
+    <div class="ps-4">
+      <div class="small text-muted mb-1">
+        From Shuffle, copy the URL (it contains <code>?execution_id=…</code>) or just the ID.
+      </div>
+      <div class="input-group input-group-sm mb-2">
+        <input type="text" id="shuffle-exec-input" class="form-control font-monospace"
+               placeholder="http://localhost:3001/workflows/…?execution_id=… or just the UUID">
+        <button class="btn btn-outline-info" onclick="fetchShuffleResults()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Fetch Results
+        </button>
+      </div>
+      <div id="shuffle-results-area"></div>
+    </div>`;
+}
+
+async function fetchShuffleResults() {
+  const raw = document.getElementById('shuffle-exec-input').value.trim();
+  if (!raw) return;
+  let execId = raw;
+  try { const u = new URL(raw); execId = u.searchParams.get('execution_id') || raw; } catch (_) {}
+
+  const area = document.getElementById('shuffle-results-area');
+  area.innerHTML = `<div class="text-center py-2">
+    <span class="spinner-border spinner-border-sm text-info me-1"></span>
+    <small class="text-muted">Fetching results…</small></div>`;
+
+  if (_shuffleApiBase) {
+    try {
+      const resp = await fetch(`${_shuffleApiBase}/streams/${encodeURIComponent(execId)}`, { credentials: 'include' });
+      if (resp.ok) { renderShuffleResults(area, await resp.json()); return; }
+      const resp2 = await fetch(`${_shuffleApiBase}/streams/results`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ execution_id: execId }),
+      });
+      if (resp2.ok) { renderShuffleResults(area, await resp2.json()); return; }
+    } catch (corsErr) {
+      console.warn('Browser-direct blocked, trying backend proxy:', corsErr);
+    }
+  }
+
+  try {
+    const data = await apiFetch(`/shuffle/results/${encodeURIComponent(execId)}`);
+    renderShuffleResults(area, data);
+  } catch (e) {
+    area.innerHTML = `<div class="text-danger small mt-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>${escHtml(e.message)}
+      <div class="mt-1 text-muted" style="font-size:.75rem">
+        Set a valid <code>SHUFFLE_API_TOKEN</code> in <code>.env</code> and restart.
+      </div></div>`;
+  }
+}
+
+function summariseResult(r) {
+  let raw = r.result ?? '';
+  if (typeof raw !== 'string') { try { raw = JSON.stringify(raw); } catch (_) { raw = String(raw); } }
+  let parsed = null, s = raw;
+  for (let i = 0; i < 3; i++) {
+    try { parsed = JSON.parse(s); if (typeof parsed === 'object') break; s = parsed; parsed = null; }
+    catch (_) { break; }
+  }
+  if (parsed && typeof parsed === 'object') {
+    if ('status' in parsed && typeof parsed.status === 'number') return `HTTP ${parsed.status}`;
+    for (const v of Object.values(parsed)) {
+      if (typeof v === 'string' && v.length < 120 && !/</.test(v)) return v.trim();
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    }
+    return '(object)';
+  }
+  const clean = raw.replace(/\\+"/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  const first = clean.split(/[\r\n]/)[0].trim();
+  return first.slice(0, 80) + (first.length > 80 ? '…' : '');
+}
+
+function renderShuffleResults(area, data) {
+  const status = data.status || 'UNKNOWN';
+  const statusClass = { FINISHED: 'success', EXECUTING: 'warning', ABORTED: 'danger' }[status] ?? 'secondary';
+  const results = Array.isArray(data.results) ? data.results : [];
+  const succeeded = results.filter(r => (r.status || '').toUpperCase() === 'SUCCESS').length;
+  const failed    = results.filter(r => (r.status || '').toUpperCase() === 'FAILURE').length;
+
+  const rows = results.map(r => {
+    const s = (r.status || '').toUpperCase();
+    const dot = s === 'SUCCESS' ? '🟢' : '🔴';
+    const name = escHtml(r.action?.label || r.action?.name || r.action?.app_name || '—');
+    const summary = escHtml(summariseResult(r) || '—');
+    return `<tr>
+      <td class="small" style="white-space:nowrap">${dot} ${name}</td>
+      <td class="small text-muted">${summary}</td>
+    </tr>`;
+  }).join('');
+
+  const countLine = `${succeeded} succeeded`
+    + (failed ? ` · <span class="text-danger">${failed} failed</span>` : '')
+    + ` · ${results.length} action${results.length !== 1 ? 's' : ''}`;
+
+  area.innerHTML = `
+    <div class="mt-2 rounded border p-2" style="font-size:.82rem">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge bg-${statusClass}">${escHtml(status)}</span>
+        <span class="text-muted small">${countLine}</span>
+        <button class="btn btn-outline-secondary btn-sm ms-auto py-0 px-1" style="font-size:.7rem"
+                onclick="navigator.clipboard.writeText(${JSON.stringify(JSON.stringify(data, null, 2))})">
+          <i class="bi bi-clipboard"></i> JSON
+        </button>
+      </div>
+      ${results.length
+        ? `<table class="table table-borderless table-sm mb-0">
+             <tbody>${rows}</tbody>
+           </table>`
+        : '<span class="text-muted">No action results.</span>'}
+    </div>`;
+
+  fetch('/api/shuffle/results/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(r => r.json()).then(j => {
+    const el = document.getElementById('shuffle-log-status');
+    if (el) el.innerHTML = `<i class="bi bi-save me-1"></i><code>${escHtml(j.path || '')}</code>`;
+  }).catch(() => {});
+}
+
+/* ── Utilities (duplicated from app.js subset needed here) ── */
+function show(id) { document.getElementById(id).classList.remove('d-none'); }
+function hide(id) { document.getElementById(id).classList.add('d-none'); }
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+</script>
+{% endblock %}

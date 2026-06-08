@@ -1,21 +1,23 @@
-# Server configuration
-SERVER_IP = "0.0.0.0"
-PORT = 5000
+"""
+Legacy constants module for backward compatibility.
+New code should use core.config instead.
+"""
 
-# Kafka consumer configuration
-KAFKA_BROKER = 'localhost:9092'
-KAFKA_TOPIC = 'ai4soar_kafka_topic'
-KAFKA_CONFIG = {
-    'bootstrap.servers': KAFKA_BROKER,
-    'group.id': 'ai4soar_group',
-    'auto.offset.reset': 'earliest'
-}
+from core.config import config
 
-# Shuffle configuration
-SHUFFLE_API_BASE_URL = "http://localhost:3001/api/v1"
-SHUFFLE_API_TOKEN = "e8a6e9a9-e18f-4b80-99a1-9f47a2efa4e1"
+# Server configuration (backward compatibility)
+SERVER_IP = config.server.host
+PORT = config.server.port
 
-# Relevant keys for one-hot encoding
-SELECTED_FEATURES = ["srcip", "srcport", "dstip", "hostname", "technique"]
+# Kafka consumer configuration (backward compatibility - legacy)
+KAFKA_BROKER = config.kafka.legacy_broker
+KAFKA_TOPIC = config.kafka.legacy_topic
+KAFKA_CONFIG = config.kafka.get_legacy_config()
 
-MITRE_TECHNIQUES = ['Password Guessing', 'SSH', 'Password Cracking']
+# Shuffle configuration (backward compatibility)
+SHUFFLE_API_BASE_URL = config.shuffle.api_base_url
+SHUFFLE_API_TOKEN = config.shuffle.api_token
+
+# Relevant keys for one-hot encoding (backward compatibility)
+SELECTED_FEATURES = config.alert_processing.selected_features
+MITRE_TECHNIQUES = config.alert_processing.mitre_techniques

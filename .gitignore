@@ -1,8 +1,59 @@
-cassandra/
-cortex/
-elasticsearch/
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Environment / secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Virtual environments ─────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Runtime output (generated at runtime, not source) ────────────────────────
+output/
+logs/
+*.log
+
+# ── ML model binaries ────────────────────────────────────────────────────────
+# Large models (rf=221 MB, knn=7.4 MB) are gitignored — retrain with:
+#   python3 scripts/train_similarity_model.py
+# Small models committed directly (mlp=968 KB is the default).
+models/knn_recommender.joblib
+models/rf_recommender.joblib
+models/xgb_recommender.joblib
+
+# ── Datasets (large, external, or generated) ─────────────────────────────────
+datasets/
+Security-Datasets/
+attack-stix-data/
+
+# ── Shuffle SOAR runtime dirs ────────────────────────────────────────────────
 shuffle-apps/
 shuffle-database/
 shuffle-files/
+cassandra/
+cortex/
+elasticsearch/
 thehive/
-*.pyc
+
+# ── Test / coverage artefacts ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/

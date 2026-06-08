@@ -1,0 +1,121 @@
+id: pb-t1562-restore-defenses
+name: "Restore Disabled Security Defenses"
+version: "1.0"
+techniques:
+  - T1562
+  - T1562.001
+  - T1562.002
+  - T1562.004
+tactics:
+  - defense-evasion
+description: "Re-enable disabled AV/EDR and firewall, restore Windows Event Logging, and investigate what disabled them"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Host where defenses were disabled"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.srcuser
+      - data.srcuser
+    description: "User account that disabled defenses"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Host IP address"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--a8d2b6c5-9e3f-4a7b-2c5d-6f0e4a8b1c3d"
+  name: "Restore Security Defenses on {{hostname}}"
+  description: "Re-enable AV, firewall, and audit logging on {{hostname}}; investigate the account {{username}} that disabled them"
+  playbook_types:
+    - remediation
+    - investigation
+    - notification
+  workflow_start: "step--restore-av"
+  workflow:
+
+    step--restore-av:
+      type: action
+      name: "Re-enable AV/EDR service on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "systemctl start wazuh-agent 2>/dev/null || true;
+             systemctl enable wazuh-agent 2>/dev/null || true;
+             systemctl start clamd 2>/dev/null || true"
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] AV RE-ENABLED on {{hostname}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--restore-firewall"
+      on_failure: "step--restore-firewall"
+
+    step--restore-firewall:
+      type: action
+      name: "Re-enable host firewall on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "systemctl start firewalld 2>/dev/null || ufw enable 2>/dev/null || iptables-restore < /etc/iptables/rules.v4 2>/dev/null || true"
+      on_success: "step--restore-logging"
+      on_failure: "step--restore-logging"
+
+    step--restore-logging:
+      type: action
+      name: "Re-enable audit/event logging on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "systemctl start auditd 2>/dev/null || true;
+             systemctl enable auditd 2>/dev/null || true;
+             auditctl -e 1 2>/dev/null || true"
+      on_success: "step--investigate-actor"
+      on_failure: "step--create-ticket"
+
+    step--investigate-actor:
+      type: action
+      name: "Collect evidence of who disabled defenses"
+      commands:
+        - type: bash
+          command: >
+            ssh -o StrictHostKeyChecking=no {{hostname}}
+            "last -20 {{username}} 2>/dev/null > /tmp/ai4soar_actor_{{hostname}}.txt;
+             journalctl -u wazuh-agent --since '1 hour ago' 2>/dev/null >> /tmp/ai4soar_actor_{{hostname}}.txt || true"
+      on_completion: "step--create-ticket"
+
+    step--create-ticket:
+      type: action
+      name: "Create defense evasion incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":     "Security Defenses Disabled on {{hostname}}",
+              "severity":  "high",
+              "technique": "T1562",
+              "hostname":  "{{hostname}}",
+              "username":  "{{username}}",
+              "src_ip":    "{{src_ip}}"
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

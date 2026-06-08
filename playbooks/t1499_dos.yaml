@@ -1,0 +1,141 @@
+id: pb-t1499-block-dos-source
+name: "Block Denial-of-Service Source"
+version: "1.0"
+techniques:
+  - T1499
+  - T1499.001
+  - T1499.002
+  - T1499.003
+  - T1499.004
+tactics:
+  - impact
+description: "Block the flooding source IP at the firewall, rate-limit the targeted service port, and open an incident ticket"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "Source IP performing the flood — blocked at the firewall"
+  dst_port:
+    type: integer
+    required: false
+    sources:
+      - _source.data.dstport
+      - data.dstport
+    description: "Targeted destination port — used to apply per-port rate limiting; step skipped if absent"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Affected host — included in incident ticket and block log"
+  duration_hours:
+    type: integer
+    required: false
+    default: 24
+    description: "IP block duration in hours — auto-expires via 'at' scheduler"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--c3f1a9b2-7e5d-4c8a-b2d3-4e5f6a7b8c9d"
+  name: "Block DoS from {{src_ip}}"
+  description: >
+    Block {{src_ip}} for {{duration_hours}}h (auto-expires),
+    rate-limit port {{dst_port}} on {{hostname}}, and open an incident ticket.
+  playbook_types:
+    - prevention
+    - remediation
+    - notification
+  workflow_start: "step--block-ip"
+  workflow:
+
+    # Step 1 — Drop attacker IP and schedule auto-expiry
+    step--block-ip:
+      type: action
+      name: "Block {{src_ip}} at firewall for {{duration_hours}}h"
+      commands:
+        - type: bash
+          command: >
+            iptables -I INPUT   -s {{src_ip}} -j DROP &&
+            iptables -I FORWARD -s {{src_ip}} -j DROP
+        - type: bash
+          command: >
+            echo "iptables -D INPUT   -s {{src_ip}} -j DROP &&
+                  iptables -D FORWARD -s {{src_ip}} -j DROP" |
+            at now + {{duration_hours}} hours
+        - type: bash
+          command: >
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')]
+                  BLOCKED {{src_ip}} for {{duration_hours}}h (DoS, host={{hostname}})"
+            >> /var/log/ai4soar_blocks.log
+      on_success: "step--throttle-output"
+      on_failure: "step--throttle-output"
+
+    # Step 2 — Throttle OUTPUT traffic from the attacker so the probe VM cannot
+    #           forward residual flood packets toward the victim.
+    #           Allows 10 packets/min (keep-alive tolerance) then drops the rest.
+    step--throttle-output:
+      type: action
+      name: "Throttle OUTPUT from {{src_ip}} toward victim"
+      commands:
+        - type: bash
+          command: >
+            iptables -I OUTPUT -s {{src_ip}} -m limit --limit 10/min -j ACCEPT &&
+            iptables -A OUTPUT -s {{src_ip}} -j DROP
+        - type: bash
+          command: >
+            echo "iptables -D OUTPUT -s {{src_ip}} -m limit --limit 10/min -j ACCEPT &&
+                  iptables -D OUTPUT -s {{src_ip}} -j DROP" |
+            at now + {{duration_hours}} hours
+      on_success: "step--rate-limit"
+      on_failure: "step--rate-limit"
+
+    # Step 3 — Rate-limit the targeted port so the service survives if the block
+    #           rule arrives late or is bypassed by a rotated source IP.
+    #           on_failure is intentional: ticket is created regardless.
+    step--rate-limit:
+      type: action
+      name: "Rate-limit port {{dst_port}} on {{hostname}}"
+      commands:
+        - type: bash
+          command: >
+            if [ -n "{{dst_port}}" ] && [ "{{dst_port}}" != "None" ]; then
+              iptables -I INPUT -p tcp --dport {{dst_port}} \
+                -m limit --limit 20/s --limit-burst 50 -j ACCEPT &&
+              iptables -A INPUT -p tcp --dport {{dst_port}} -j DROP
+            else
+              echo "No dst_port — skipping rate-limit rule"
+            fi
+      on_success: "step--create-ticket"
+      on_failure: "step--create-ticket"
+
+    # Step 4 — Open incident ticket
+    step--create-ticket:
+      type: action
+      name: "Create DoS incident ticket"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: >
+            {
+              "title":            "DoS attack blocked from {{src_ip}}",
+              "severity":         "high",
+              "technique":        "T1499",
+              "src_ip":           "{{src_ip}}",
+              "dst_port":         "{{dst_port}}",
+              "hostname":         "{{hostname}}",
+              "block_duration_h": {{duration_hours}}
+            }
+      on_completion: "step--end"
+
+    step--end:
+      type: end

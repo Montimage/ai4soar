@@ -1,0 +1,83 @@
+id: pb-t1059-contain-malicious-execution
+name: "Contain Malicious Script Execution"
+version: "1.0"
+techniques:
+  - T1059
+  - T1059.001
+  - T1059.003
+  - T1059.004
+tactics:
+  - execution
+description: "Kill the malicious process and optionally isolate the affected host"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+      - hostname
+    description: "Host where malicious execution was detected"
+  process_name:
+    type: string
+    required: false
+    sources:
+      - _source.data.win.eventdata.image
+      - _source.data.process.name
+      - data.process.name
+    description: "Malicious process name or path"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Remote IP if execution was triggered remotely"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.dstuser
+      - _source.data.win.eventdata.subjectUserName
+    description: "User account under which the process ran"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--3cbb6b80-3e1b-474e-9218-1d08cc84fa65"
+  name: "Contain Malicious Execution on {{hostname}}"
+  description: "Kill {{process_name}} on {{hostname}} and collect forensic evidence"
+  playbook_types:
+    - remediation
+    - investigation
+    - notification
+  workflow_start: "step--kill-process"
+  workflow:
+    step--kill-process:
+      type: action
+      name: "Kill malicious process"
+      commands:
+        - type: bash
+          command: "pkill -9 -f '{{process_name}}' || taskkill /F /IM '{{process_name}}' 2>/dev/null"
+      on_success: "step--collect-evidence"
+      on_failure: "step--collect-evidence"
+    step--collect-evidence:
+      type: action
+      name: "Collect forensic evidence"
+      commands:
+        - type: bash
+          command: "ps aux > /tmp/ai4soar_snapshot_$(date +%s).txt && netstat -an >> /tmp/ai4soar_snapshot_$(date +%s).txt"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Escalate to SOC"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Malicious Execution on {{hostname}}","severity":"high","process":"{{process_name}}","user":"{{username}}","technique":"T1059"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

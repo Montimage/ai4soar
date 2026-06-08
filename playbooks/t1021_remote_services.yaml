@@ -1,0 +1,93 @@
+id: pb-t1021-block-lateral-movement
+name: "Block Lateral Movement via Remote Services"
+version: "1.0"
+techniques:
+  - T1021
+  - T1021.001
+  - T1021.002
+  - T1021.004
+  - T1021.006
+tactics:
+  - lateral-movement
+description: "Block lateral movement from the source host and investigate the account used"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "Source IP initiating lateral movement"
+  dst_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.dstip
+      - data.dstip
+      - dstip
+    description: "Target IP (destination host)"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.dstuser
+      - data.dstuser
+      - _source.data.win.eventdata.subjectUserName
+    description: "Account used for lateral movement"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+    description: "Source hostname"
+  protocol:
+    type: string
+    required: false
+    sources:
+      - _source.data.protocol
+      - data.protocol
+    default: "unknown"
+    description: "Protocol used (ssh, rdp, smb, ...)"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--cec7fc29-ddb1-485e-96f8-142e66f02410"
+  name: "Block Lateral Movement from {{src_ip}}"
+  description: "Block {{src_ip}} → {{dst_ip}} ({{protocol}}) and investigate {{username}}"
+  playbook_types:
+    - prevention
+    - investigation
+    - notification
+  workflow_start: "step--block-src"
+  workflow:
+    step--block-src:
+      type: action
+      name: "Block lateral movement source"
+      commands:
+        - type: bash
+          command: "iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP"
+      on_success: "step--isolate-account"
+      on_failure: "step--notify"
+    step--isolate-account:
+      type: action
+      name: "Lock account used for lateral movement"
+      commands:
+        - type: bash
+          command: "usermod -L {{username}} 2>/dev/null || echo 'Account lock requires AD/LDAP integration'"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Alert SOC of lateral movement"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Lateral Movement {{src_ip}}→{{dst_ip}}","severity":"critical","technique":"T1021","protocol":"{{protocol}}","user":"{{username}}"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

@@ -1,0 +1,82 @@
+id: pb-t1074-respond-data-collection
+name: "Respond to Suspicious Data Collection"
+version: "1.0"
+techniques:
+  - T1005
+  - T1074
+  - T1074.001
+  - T1560
+  - T1113
+tactics:
+  - collection
+description: "Contain suspicious data staging or collection activity on the affected host"
+
+parameters:
+  hostname:
+    type: string
+    required: true
+    sources:
+      - _source.agent.name
+      - agent.name
+    description: "Host where data collection was detected"
+  src_ip:
+    type: ipv4
+    required: false
+    sources:
+      - _source.data.srcip
+      - data.srcip
+    description: "Source IP (if exfiltration destination known)"
+  username:
+    type: string
+    required: false
+    sources:
+      - _source.data.dstuser
+      - _source.data.win.eventdata.subjectUserName
+    description: "User account performing the collection"
+  file_path:
+    type: string
+    required: false
+    sources:
+      - _source.syscheck.path
+      - _source.data.win.eventdata.targetFilename
+    description: "File or directory being staged"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--5ea9bbce-3124-4250-bbca-af157c0d9e2f"
+  name: "Respond to Data Collection on {{hostname}}"
+  description: "Isolate {{hostname}}, preserve evidence, block outbound if src_ip known"
+  playbook_types:
+    - investigation
+    - prevention
+    - notification
+  workflow_start: "step--isolate-host"
+  workflow:
+    step--isolate-host:
+      type: action
+      name: "Block outbound data transfer from host"
+      commands:
+        - type: bash
+          command: "iptables -I OUTPUT -s {{hostname}} -j DROP 2>/dev/null || echo 'Apply network isolation via EDR/NAC'"
+      on_success: "step--preserve-evidence"
+      on_failure: "step--preserve-evidence"
+    step--preserve-evidence:
+      type: action
+      name: "Preserve staged files and process list"
+      commands:
+        - type: bash
+          command: "ls -lah '{{file_path}}' 2>/dev/null; ps aux > /tmp/ai4soar_procs_$(date +%s).txt; find /tmp /var/tmp -newer /etc/passwd -ls 2>/dev/null >> /tmp/ai4soar_staged_$(date +%s).txt"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Escalate data collection alert"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"Suspicious Data Collection on {{hostname}}","severity":"high","host":"{{hostname}}","user":"{{username}}","file":"{{file_path}}","technique":"T1074"}'
+      on_completion: "step--end"
+    step--end:
+      type: end

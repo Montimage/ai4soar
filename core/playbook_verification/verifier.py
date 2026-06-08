@@ -1,229 +1,392 @@
-import json
-import networkx as nx
-from typing import Dict, List, Tuple, Optional
-from openai import OpenAI
+"""
+PlaybookVerifier — structural + LLM-based verification for SOAR playbooks.
+
+Supports three input formats:
+  - CACAO 2.0 JSON  (from our intelligent orchestration pipeline)
+  - Shuffle JSON    (manually created workflows in Shuffle SOAR)
+  - Internal nodes  ({nodes: [{id, name, description, next}]})
+
+Verification layers:
+  1. Spec compliance  — CACAO-specific: UUID, required fields, no stray {{placeholders}}
+  2. Structural       — graph analysis: DAG check, start/end nodes, dead steps
+  3. LLM semantic     — logical contradiction detection (optional, requires API key)
+"""
+
+import logging
 import os
+import re
+import uuid as _uuid_mod
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+
+import networkx as nx
+
+logger = logging.getLogger(__name__)
+
+_UUID_RE      = re.compile(r"^playbook--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_PLACEHOLDER  = re.compile(r"\{\{\w+\}\}")
+
 
 class VerificationScore(Enum):
-    NO_ERROR = 100
-    MINOR_ISSUE = 80
+    NO_ERROR       = 100
+    MINOR_ISSUE    = 80
     MODERATE_ISSUE = 60
-    MAJOR_ISSUE = 40
+    MAJOR_ISSUE    = 40
     CRITICAL_ISSUE = 20
+
 
 @dataclass
 class VerificationIssue:
     description: str
-    score: int
-    node_id: Optional[str] = None
-    severity: str = "warning"
+    score:       int
+    node_id:     Optional[str] = None
+    severity:    str           = "warning"
+
 
 @dataclass
 class NodeInfo:
-    id: str
-    name: str
+    id:          str
+    name:        str
     description: str
-    api: Optional[str] = None
-    next_nodes: List[str] = None
+    api:         Optional[str]  = None
+    next_nodes:  List[str]      = None
+
+
+# ------------------------------------------------------------------
+# Format adapters
+# ------------------------------------------------------------------
+
+def cacao_to_verifier_nodes(cacao: Dict) -> Dict:
+    """
+    Convert a CACAO 2.0 playbook dict → internal verifier node format.
+
+    Edges are built from on_success / on_failure / on_completion links.
+    """
+    workflow = cacao.get("workflow", {})
+    nodes: List[Dict] = []
+
+    for step_id, step in workflow.items():
+        nexts = []
+        for key in ("on_success", "on_failure", "on_completion"):
+            target = step.get(key)
+            if target and target != step_id:
+                nexts.append(target)
+
+        cmds = step.get("commands", [])
+        description = " | ".join(c.get("command", "")[:80] for c in cmds) if cmds else ""
+
+        nodes.append({
+            "id":          step_id,
+            "name":        step.get("name", step_id),
+            "description": description,
+            "next":        nexts,
+        })
+
+    return {"nodes": nodes}
+
+
+def shuffle_to_verifier_nodes(shuffle_json: Dict) -> Dict:
+    """Convert a Shuffle workflow JSON → internal verifier node format."""
+    nodes: Dict[str, Dict] = {}
+
+    for action in shuffle_json.get("actions", []):
+        node_id = action["id"]
+        code_param = next(
+            (p["value"] for p in action.get("parameters", []) if p["name"] == "code"),
+            None,
+        )
+        nodes[node_id] = {
+            "id":          node_id,
+            "name":        action.get("label") or action.get("name", ""),
+            "description": action.get("description", ""),
+            "api":         action.get("app_name", ""),
+            "parameters":  {p["name"]: p.get("value", "") for p in action.get("parameters", [])},
+            "code":        code_param,
+            "next":        [],
+        }
+
+    for branch in shuffle_json.get("branches", []):
+        src, dst = branch["source_id"], branch["destination_id"]
+        if src in nodes:
+            nodes[src]["next"].append(dst)
+
+    return {"nodes": list(nodes.values())}
+
+
+# Keep old name for backward compatibility
+simplify_shuffle_playbook = shuffle_to_verifier_nodes
+
+
+# ------------------------------------------------------------------
+# CACAO spec checks (format-specific, runs before graph analysis)
+# ------------------------------------------------------------------
+
+def verify_cacao_spec(cacao: Dict, is_template: bool = False) -> List[VerificationIssue]:
+    """
+    Check CACAO 2.0 required fields and formatting rules.
+    Returns a list of spec violations (empty = compliant).
+
+    is_template=True skips the {{placeholder}} check — templates intentionally
+    leave variables un-substituted until execution time.
+    """
+    issues: List[VerificationIssue] = []
+
+    # Required top-level fields (created/modified are instance-specific; skip for templates)
+    instance_fields = () if is_template else ("created", "modified")
+    for field in ("type", "spec_version", "id", "name", "workflow_start", "workflow") + instance_fields:
+        if field not in cacao:
+            issues.append(VerificationIssue(
+                description=f"Missing required CACAO 2.0 field: '{field}'",
+                score=VerificationScore.CRITICAL_ISSUE.value,
+                severity="error",
+            ))
+
+    # type must be "playbook"
+    if cacao.get("type") != "playbook":
+        issues.append(VerificationIssue(
+            description=f"'type' must be 'playbook', got '{cacao.get('type')}'",
+            score=VerificationScore.MAJOR_ISSUE.value,
+            severity="error",
+        ))
+
+    # spec_version must be "cacao-2.0"
+    if cacao.get("spec_version") != "cacao-2.0":
+        issues.append(VerificationIssue(
+            description=f"'spec_version' must be 'cacao-2.0', got '{cacao.get('spec_version')}'",
+            score=VerificationScore.MAJOR_ISSUE.value,
+            severity="error",
+        ))
+
+    # id must be playbook--<UUID4>
+    pb_id = cacao.get("id", "")
+    if not _UUID_RE.match(pb_id):
+        issues.append(VerificationIssue(
+            description=f"'id' must be 'playbook--<UUID4>', got '{pb_id}'",
+            score=VerificationScore.MAJOR_ISSUE.value,
+            severity="error",
+        ))
+
+    # workflow_start must reference an existing step
+    workflow = cacao.get("workflow", {})
+    ws = cacao.get("workflow_start")
+    if ws and ws not in workflow:
+        issues.append(VerificationIssue(
+            description=f"'workflow_start' references unknown step '{ws}'",
+            score=VerificationScore.CRITICAL_ISSUE.value,
+            severity="error",
+        ))
+
+    # on_success / on_failure / on_completion must reference existing steps
+    for step_id, step in workflow.items():
+        for key in ("on_success", "on_failure", "on_completion"):
+            target = step.get(key)
+            if target and target not in workflow:
+                issues.append(VerificationIssue(
+                    description=f"Step '{step_id}'.{key} references unknown step '{target}'",
+                    score=VerificationScore.CRITICAL_ISSUE.value,
+                    node_id=step_id,
+                    severity="error",
+                ))
+
+    # No unresolved {{placeholders}} in instantiated playbooks (skip for templates)
+    if not is_template:
+        for ph in sorted(set(_find_placeholders(cacao))):
+            issues.append(VerificationIssue(
+                description=f"Unresolved placeholder '{ph}' — IOC missing from alert",
+                score=VerificationScore.MODERATE_ISSUE.value,
+                severity="warning",
+            ))
+
+    return issues
+
+
+def _find_placeholders(obj: Any) -> List[str]:
+    found: List[str] = []
+    if isinstance(obj, str):
+        found.extend(_PLACEHOLDER.findall(obj))
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            found.extend(_find_placeholders(v))
+    elif isinstance(obj, list):
+        for item in obj:
+            found.extend(_find_placeholders(item))
+    return found
+
+
+# ------------------------------------------------------------------
+# Main verifier class
+# ------------------------------------------------------------------
 
 class PlaybookVerifier:
-    def __init__(self, use_local_model: bool = False):
-        self.use_local_model = use_local_model
-        if not use_local_model:
-            # Initialize OpenAI client
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self.client = OpenAI(api_key=api_key)
 
-    def parse_playbook(self, playbook_data: Dict) -> Tuple[nx.DiGraph, Dict[str, NodeInfo]]:
-        """
-        Parse playbook data into a directed graph and node information dictionary
-        """
-        G = nx.DiGraph()
-        nodes_info = {}
+    def __init__(self) -> None:
+        pass
 
-        # Parse nodes
+    # ------------------------------------------------------------------
+    # Public entry points
+    # ------------------------------------------------------------------
+
+    def verify(
+        self,
+        data: Dict,
+        structural_only: bool = False,
+        is_template: bool = False,
+    ) -> Dict:
+        """
+        Auto-detect format and verify.
+
+        Accepts:
+          - CACAO 2.0 dict (has 'spec_version': 'cacao-2.0' or 'workflow' key)
+          - Shuffle JSON  (has 'actions' key)
+          - Internal nodes format (has 'nodes' key)
+
+        is_template=True skips {{placeholder}} warnings (used for library templates).
+        """
+        spec_issues: List[VerificationIssue] = []
+
+        if "spec_version" in data or "workflow" in data:
+            spec_issues = verify_cacao_spec(data, is_template=is_template)
+            node_data   = cacao_to_verifier_nodes(data)
+        elif "actions" in data:
+            node_data = shuffle_to_verifier_nodes(data)
+        else:
+            node_data = data
+
+        return self._run(node_data, spec_issues=spec_issues, structural_only=structural_only)
+
+    def verify_playbook(self, playbook_data: Dict, structural_only: bool = False) -> Dict:
+        """Legacy entry point — accepts internal node format."""
+        return self._run(playbook_data, spec_issues=[], structural_only=structural_only)
+
+    # ------------------------------------------------------------------
+    # Internal pipeline
+    # ------------------------------------------------------------------
+
+    def _run(
+        self,
+        node_data:       Dict,
+        spec_issues:     List[VerificationIssue],
+        structural_only: bool,
+    ) -> Dict:
+        G, nodes_info       = self._parse(node_data)
+        structural_issues   = self._verify_structure(G)
+        llm_issues: List[VerificationIssue] = []
+
+        llm_status = "skipped"
+        if not structural_only:
+            try:
+                llm_issues = self._verify_with_llm(nodes_info)
+                llm_status = "no_contradictions" if not llm_issues else "contradictions_found"
+            except Exception as exc:
+                logger.warning(f"[Verifier] LLM check skipped: {exc}")
+                llm_status = f"error: {exc}"
+
+        all_issues = spec_issues + structural_issues + llm_issues
+        overall    = min((i.score for i in all_issues), default=VerificationScore.NO_ERROR.value)
+
+        return {
+            "overall_score": overall,
+            "passed":        overall >= VerificationScore.MODERATE_ISSUE.value,
+            "llm_checked":   llm_status,
+            "issues": [
+                {
+                    "description": i.description,
+                    "score":       i.score,
+                    "node_id":     i.node_id,
+                    "severity":    i.severity,
+                }
+                for i in all_issues
+            ],
+        }
+
+    def _parse(self, playbook_data: Dict) -> Tuple[nx.DiGraph, Dict[str, NodeInfo]]:
+        G           = nx.DiGraph()
+        nodes_info  = {}
         for node in playbook_data.get("nodes", []):
-            node_id = node.get("id")
-            node_info = NodeInfo(
+            node_id  = node.get("id")
+            info     = NodeInfo(
                 id=node_id,
                 name=node.get("name", ""),
                 description=node.get("description", ""),
                 api=node.get("api"),
-                next_nodes=node.get("next", [])
+                next_nodes=node.get("next", []),
             )
-            nodes_info[node_id] = node_info
+            nodes_info[node_id] = info
             G.add_node(node_id)
-
-        # Add edges
-        for node_id, node_info in nodes_info.items():
-            if node_info.next_nodes:
-                for next_node in node_info.next_nodes:
-                    G.add_edge(node_id, next_node)
-
+        for node_id, info in nodes_info.items():
+            for nxt in (info.next_nodes or []):
+                G.add_edge(node_id, nxt)
         return G, nodes_info
 
-    def verify_playbook_structure(self, G: nx.DiGraph) -> List[VerificationIssue]:
-        """
-        Verify basic playbook structure using graph analysis
-        """
-        issues = []
+    def _verify_structure(self, G: nx.DiGraph) -> List[VerificationIssue]:
+        issues: List[VerificationIssue] = []
 
-        # Check for cycles
         if not nx.is_directed_acyclic_graph(G):
             issues.append(VerificationIssue(
-                description="Playbook contains cycles which may lead to infinite loops",
+                description="Workflow contains cycles — may loop indefinitely",
                 score=VerificationScore.CRITICAL_ISSUE.value,
-                severity="error"
+                severity="error",
             ))
 
-        # Check for unreachable nodes
         start_nodes = [n for n in G.nodes() if G.in_degree(n) == 0]
         if not start_nodes:
             issues.append(VerificationIssue(
-                description="No start node found in playbook",
+                description="No start node found (no node with in-degree 0)",
                 score=VerificationScore.CRITICAL_ISSUE.value,
-                severity="error"
+                severity="error",
             ))
 
-        # Check for nodes with no outgoing edges (except end nodes)
         end_nodes = [n for n in G.nodes() if G.out_degree(n) == 0]
         if not end_nodes:
             issues.append(VerificationIssue(
-                description="No end node found in playbook",
+                description="No end node found (no node with out-degree 0)",
                 score=VerificationScore.CRITICAL_ISSUE.value,
-                severity="error"
+                severity="error",
             ))
+
+        # Unreachable steps (not reachable from any start node)
+        if start_nodes:
+            reachable = set()
+            for s in start_nodes:
+                reachable |= nx.descendants(G, s) | {s}
+            unreachable = set(G.nodes()) - reachable
+            for n in unreachable:
+                issues.append(VerificationIssue(
+                    description=f"Step '{n}' is unreachable from the workflow start",
+                    score=VerificationScore.MINOR_ISSUE.value,
+                    node_id=n,
+                    severity="warning",
+                ))
 
         return issues
 
-    def verify_with_llm(self, nodes_info: Dict[str, NodeInfo]) -> List[VerificationIssue]:
-        """
-        Verify playbook logic using LLM
-        """
-        # Prepare context for LLM
+    def _verify_with_llm(self, nodes_info: Dict[str, NodeInfo]) -> List[VerificationIssue]:
         context = (
-            "You are a playbook verification expert focused on identifying logical contradictions. Analyze the following playbook nodes, considering all provided details for each node (Name, Description, API, Code, Parameters, Next nodes), to detect any sequences of actions that are impossible or illogical due to a previous action (e.g., analyzing a file after it has been deleted). "
-            "Focus ONLY on logical contradictions in the workflow. Do NOT report minor issues, best practices, or general suggestions. "
-            "If you find a contradiction, clearly identify the nodes involved and explain the logical inconsistency. If no logical contradiction is detected based on the provided information, state: 'No logical contradiction detected.'\n\n"
+            "You are a playbook verification expert focused on identifying logical contradictions. "
+            "Analyze the following playbook steps to detect sequences of actions that are impossible "
+            "or illogical (e.g., analyzing a file after it has been deleted). "
+            "Focus ONLY on logical contradictions. Do NOT report minor issues or best practices. "
+            "If no contradiction is found, state: 'No logical contradiction detected.'\n\n"
         )
         for node_id, node in nodes_info.items():
-            context += f"Node {node_id}:\n"
-            context += f"Name: {node.name}\n"
-            context += f"Description: {node.description}\n"
-            if hasattr(node, 'code') and node.code:
-                context += f"Code: {node.code}\n"
-            elif hasattr(node, 'parameters') and isinstance(node.parameters, dict):
-                for param_name, param_value in node.parameters.items():
-                    context += f"Parameter {param_name}: {param_value}\n"
+            context += f"Step {node_id} — {node.name}\n"
+            if node.description:
+                context += f"  Action: {node.description}\n"
             if node.api:
-                context += f"API: {node.api}\n"
+                context += f"  API: {node.api}\n"
             if node.next_nodes:
-                context += f"Next nodes: {', '.join(node.next_nodes)}\n"
+                context += f"  Next: {', '.join(node.next_nodes)}\n"
             context += "\n"
 
-        if self.use_local_model:
-            # Use Ollama for local model
-            import requests
-            response = requests.post('http://localhost:11434/api/generate',
-                                  json={
-                                      "model": "llama2",
-                                      "prompt": context,
-                                      "stream": False
-                                  })
-            analysis = response.json()['response']
-        else:
-            # Use OpenAI GPT-4 with new API
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "user", "content": context}
-                ]
-            )
-            analysis = response.choices[0].message.content
+        from utils.llm.client import call_llm
+        analysis = call_llm(context, max_tokens=512)
 
-        # Parse LLM response and convert to verification issues
-        issues = []
-        # Look for specific terms indicating a detected contradiction
-        contradiction_terms = ["contradiction", "inconsistency", "illogical", "impossible", "should be reversed"]
-        normalized_analysis = analysis.strip().lower()
-        if "no logical contradiction detected" not in normalized_analysis:
-            # Only treat as issue if it actually points out a contradiction
+        issues: List[VerificationIssue] = []
+        if "no logical contradiction detected" not in analysis.strip().lower():
             issues.append(VerificationIssue(
                 description=analysis,
                 score=VerificationScore.MODERATE_ISSUE.value,
-                severity="warning"
+                severity="warning",
             ))
-
         return issues
-
-    def verify_playbook(self, playbook_data: Dict) -> Dict:
-        """
-        Main verification method that combines structural and LLM verification
-        """
-        # Parse playbook
-        G, nodes_info = self.parse_playbook(playbook_data)
-
-        # Get structural verification issues
-        structural_issues = self.verify_playbook_structure(G)
-
-        # Get LLM verification issues
-        llm_issues = self.verify_with_llm(nodes_info)
-
-        # Combine all issues
-        all_issues = structural_issues + llm_issues
-
-        # Calculate overall score
-        if not all_issues:
-            overall_score = VerificationScore.NO_ERROR.value
-        else:
-            overall_score = min(issue.score for issue in all_issues)
-
-        return {
-            "overall_score": overall_score,
-            "issues": [
-                {
-                    "description": issue.description,
-                    "score": issue.score,
-                    "node_id": issue.node_id,
-                    "severity": issue.severity
-                }
-                for issue in all_issues
-            ]
-        }
-
-def simplify_shuffle_playbook(shuffle_json):
-    # Build node map
-    nodes = {}
-    for action in shuffle_json.get("actions", []):
-        node_id = action["id"]
-        # Get the main code/command if available
-        code_param = next((p["value"] for p in action.get("parameters", []) if p["name"] == "code"), None)
-        nodes[node_id] = {
-            "id": node_id,
-            "name": action.get("label") or action.get("name"),
-            "description": action.get("description", ""),
-            "api": action.get("app_name", ""),
-            "parameters": {p["name"]: p.get("value", "") for p in action.get("parameters", [])},
-            "code": code_param,
-            "next": []
-        }
-
-    # Build connections (branches)
-    for branch in shuffle_json.get("branches", []):
-        src = branch["source_id"]
-        dst = branch["destination_id"]
-        if src in nodes:
-            nodes[src]["next"].append(dst)
-
-    # Remove parameters if you want a minimal version
-    for node in nodes.values():
-        if not node["parameters"]:
-            del node["parameters"]
-        if not node["code"]:
-            del node["code"]
-
-    return {"nodes": list(nodes.values())}
