@@ -1,0 +1,39 @@
+{
+  "timestamp": "2018-03-24T14:35:03.195686-0600",
+  "flow_id": 201913768856509,
+  "pcap_cnt": 1230277,
+  "event_type": "alert",
+  "src_ip": "10.47.42.68",
+  "src_port": 49943,
+  "dest_ip": "64.135.77.30",
+  "dest_port": 80,
+  "proto": "TCP",
+  "http": {
+    "hostname": "cfg.crawler.com",
+    "url": "/cr_config.asmx/GetXML?CU=X4NhmpJ8bHT1Mm8dmPR4rQTO44H34Z2Y1VxBQbSIRCGq75nAzQktq44fF3Op-YAheRfB8SqJoxJa1cMJ56P4N6d2aerehcg9p8td9J4KPz34IGtlj_bwYbKzTTIBtz7hK2KGLjNJYrAAruVCiAiv5bnaXFSMNHedOXj3EGG-ltvGdCfNt5W8jneiXdbeYyT7qujAc7CbJcKuxKl9dP4QciLTuVPxUB6hDJIIaG180THgwkKmXq1ZeWcwzNX4B1xNCJn_OvjYO-9b3q2KWdCkqiH9PSJsgJa4Rn4AYzf7GyN55_0rjpsbrK7TYeqo5Pxu6Ec0qYdFQThSeNrTrss1qtX2Auq-fB4NkFVHZ9Xyba52vr6FoZPn76RLSjG3iUMf2dSb0c18Qavzf3EJvOT1InsDwJdZmqcPRbTFaOTC-kPHdwr0qvixT8TNX_ibejsG7mpedP-EnmKj2lZIeb9WnCYPnSEsKCHHcqSVI_BvxY7a4l5BiUAD4EID",
+    "http_user_agent": "UtilMind HTTPGet",
+    "http_content_type": "text/xml",
+    "http_method": "GET",
+    "protocol": "HTTP/1.1",
+    "status": 200,
+    "length": 637
+  },
+  "app_proto": "http",
+  "flow": {
+    "pkts_toserver": 7,
+    "pkts_toclient": 6,
+    "bytes_toserver": 1722,
+    "bytes_toclient": 2194,
+    "start": "2018-03-24T14:35:03.052157-0600"
+  },
+  "tx_id": 0,
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2008975,
+    "rev": 15,
+    "signature": "ET TROJAN Suspicious Malformed Double Accept Header",
+    "category": "A Network Trojan was detected",
+    "severity": 1
+  }
+}

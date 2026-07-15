@@ -1,0 +1,5 @@
+[**] [1:2014542:2] ET CURRENT_EVENTS TDS Sutra - redirect received [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.195788 78.159.112.180:80 -> 192.168.40.10:1038
+TCP TTL:128 TOS:0x0 ID:313 IpLen:20 DgmLen:818 DF
+***AP*** Seq: 0xE0D3096C  Ack: 0xFCE580FC  Win: 0xFCF5  TcpLen: 20

@@ -1,0 +1,28 @@
+{
+  "timestamp": "2018-03-24T18:17:48.093439-0600",
+  "flow_id": 511740700552445,
+  "pcap_cnt": 345464,
+  "event_type": "alert",
+  "src_ip": "10.128.0.205",
+  "src_port": 54819,
+  "dest_ip": "10.47.22.186",
+  "dest_port": 1900,
+  "proto": "UDP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2019102,
+    "rev": 1,
+    "signature": "ET DOS Possible SSDP Amplification Scan in Progress",
+    "category": "Attempted Denial of Service",
+    "severity": 2
+  },
+  "app_proto": "failed",
+  "flow": {
+    "pkts_toserver": 2,
+    "pkts_toclient": 0,
+    "bytes_toserver": 272,
+    "bytes_toclient": 0,
+    "start": "2018-03-24T18:17:48.093437-0600"
+  }
+}

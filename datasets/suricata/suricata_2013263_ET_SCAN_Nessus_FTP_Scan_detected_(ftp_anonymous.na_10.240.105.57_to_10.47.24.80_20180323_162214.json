@@ -1,0 +1,29 @@
+{
+  "timestamp": "2018-03-23T16:22:14.172034-0600",
+  "flow_id": 344295283766716,
+  "pcap_cnt": 417921,
+  "event_type": "alert",
+  "src_ip": "10.240.105.57",
+  "src_port": 46345,
+  "dest_ip": "10.47.24.80",
+  "dest_port": 21,
+  "proto": "TCP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2013263,
+    "rev": 3,
+    "signature": "ET SCAN Nessus FTP Scan detected (ftp_anonymous.nasl)",
+    "category": "Attempted Information Leak",
+    "severity": 2
+  },
+  "app_proto": "ftp",
+  "app_proto_tc": "failed",
+  "flow": {
+    "pkts_toserver": 9,
+    "pkts_toclient": 6,
+    "bytes_toserver": 666,
+    "bytes_toclient": 610,
+    "start": "2018-03-23T16:22:14.144828-0600"
+  }
+}

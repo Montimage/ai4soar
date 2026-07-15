@@ -1,0 +1,32 @@
+{
+  "timestamp": "2018-03-24T18:00:51.377604-0600",
+  "flow_id": 1235081846041691,
+  "pcap_cnt": 843619,
+  "event_type": "alert",
+  "src_ip": "204.11.50.131",
+  "src_port": 9001,
+  "dest_ip": "10.47.44.10",
+  "dest_port": 49234,
+  "proto": "TCP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2520098,
+    "rev": 3468,
+    "signature": "ET TOR Known Tor Exit Node Traffic group 50",
+    "category": "Misc Attack",
+    "severity": 2
+  },
+  "vars": {
+    "flowbits": {
+      "ET.TorIP": true
+    }
+  },
+  "flow": {
+    "pkts_toserver": 2,
+    "pkts_toclient": 1,
+    "bytes_toserver": 132,
+    "bytes_toclient": 66,
+    "start": "2018-03-24T18:00:51.306267-0600"
+  }
+}

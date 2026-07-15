@@ -1,0 +1,28 @@
+{
+  "timestamp": "2018-03-24T18:14:08.817152-0600",
+  "flow_id": 322100700149756,
+  "pcap_cnt": 221890,
+  "event_type": "alert",
+  "src_ip": "10.128.18.12",
+  "src_port": 63470,
+  "dest_ip": "10.47.6.10",
+  "dest_port": 123,
+  "proto": "UDP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2019020,
+    "rev": 3,
+    "signature": "ET DOS Possible NTP DDoS Inbound Frequent Un-Authed GET_RESTRICT Requests IMPL 0x03",
+    "category": "Attempted Denial of Service",
+    "severity": 2
+  },
+  "app_proto": "failed",
+  "flow": {
+    "pkts_toserver": 2,
+    "pkts_toclient": 0,
+    "bytes_toserver": 120,
+    "bytes_toclient": 0,
+    "start": "2018-03-24T18:14:08.817148-0600"
+  }
+}

@@ -1,0 +1,1 @@
+10,0,"",1650893475,32,"detected","attack","Botnet Command and Control detection",{"event_1":{"timestamp":1441112330.560344,"counter":1,"attributes":[["ip.src","104.219.54.49"],["ip.dst","192.168.0.102"]]},"event_2":{"timestamp":1441112330.560344,"counter":1,"attributes":[["ip.src","104.219.54.49"],["ip.dst","192.168.0.102"]]}}

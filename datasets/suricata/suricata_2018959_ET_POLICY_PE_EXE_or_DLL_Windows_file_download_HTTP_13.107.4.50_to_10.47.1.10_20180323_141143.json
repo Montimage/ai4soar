@@ -1,0 +1,45 @@
+{
+  "timestamp": "2018-03-23T14:11:43.138063-0600",
+  "flow_id": 1579894582828890,
+  "pcap_cnt": 496807,
+  "event_type": "alert",
+  "src_ip": "13.107.4.50",
+  "src_port": 80,
+  "dest_ip": "10.47.1.10",
+  "dest_port": 49761,
+  "proto": "TCP",
+  "tx_id": 1,
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2018959,
+    "rev": 3,
+    "signature": "ET POLICY PE EXE or DLL Windows file download HTTP",
+    "category": "Potential Corporate Privacy Violation",
+    "severity": 1
+  },
+  "http": {
+    "hostname": "au.download.windowsupdate.com",
+    "url": "/c/msdownload/update/software/defu/2018/03/am_delta_patch_1.263.1011.0_269cdc2019159c2b4a36a8e9aa0702270852282d.exe",
+    "http_user_agent": "Microsoft BITS/7.8",
+    "http_content_type": "application/octet-stream",
+    "http_method": "GET",
+    "protocol": "HTTP/1.1",
+    "status": 206,
+    "length": 6423
+  },
+  "vars": {
+    "flowbits": {
+      "exe.no.referer": true,
+      "ET.http.binary": true
+    }
+  },
+  "app_proto": "http",
+  "flow": {
+    "pkts_toserver": 12,
+    "pkts_toclient": 19,
+    "bytes_toserver": 1916,
+    "bytes_toclient": 17349,
+    "start": "2018-03-23T14:11:16.876378-0600"
+  }
+}

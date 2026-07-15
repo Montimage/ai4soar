@@ -1,0 +1,5 @@
+[**] [1:2014543:1] ET CURRENT_EVENTS TDS Sutra - request in.cgi [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.076673 192.168.40.10:1038 -> 78.159.112.180:80
+TCP TTL:54 TOS:0x0 ID:63430 IpLen:20 DgmLen:403 DF
+***A**** Seq: 0xFCE57F91  Ack: 0xE0D3096C  Win: 0x1920  TcpLen: 20

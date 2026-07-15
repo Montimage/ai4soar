@@ -1,0 +1,1 @@
+10,0,"",1650893478,33,"detected","attack","Trojan detection",{"event_1":{"timestamp":1493987383.111860,"counter":4,"attributes":[["http.uri","/ctrl/cnt_boot.php?pgv="]]},"event_2":{"timestamp":1493987383.111860,"counter":4,"attributes":[["http.method","GET"],["ip.src","10.0.2.15"],["ip.dst","192.168.0.101"]]}}

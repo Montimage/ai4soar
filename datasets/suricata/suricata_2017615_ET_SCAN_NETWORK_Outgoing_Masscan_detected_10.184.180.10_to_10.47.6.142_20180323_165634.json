@@ -1,0 +1,35 @@
+{
+  "timestamp": "2018-03-23T16:56:34.333940-0600",
+  "flow_id": 1244761081837218,
+  "event_type": "alert",
+  "src_ip": "10.184.180.10",
+  "src_port": 11355,
+  "dest_ip": "10.47.6.142",
+  "dest_port": 80,
+  "proto": "TCP",
+  "tx_id": 0,
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2017615,
+    "rev": 4,
+    "signature": "ET SCAN NETWORK Outgoing Masscan detected",
+    "category": "Detection of a Network Scan",
+    "severity": 3
+  },
+  "http": {
+    "url": "/",
+    "http_user_agent": "masscan/1.0 (https://github.com/robertdavidgraham/masscan)",
+    "http_method": "GET",
+    "protocol": "HTTP/1.0",
+    "length": 0
+  },
+  "app_proto": "http",
+  "flow": {
+    "pkts_toserver": 6,
+    "pkts_toclient": 4,
+    "bytes_toserver": 554,
+    "bytes_toclient": 1300,
+    "start": "2018-03-23T16:56:28.390818-0600"
+  }
+}

@@ -1,0 +1,5 @@
+[**] [1:2018430:1] ET WEB_CLIENT SUSPICOUS Possible automated connectivity check (www.google.com) [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+03/14-14:13:32.580750 192.168.52.10:1061 -> 74.125.128.106:80
+TCP TTL:128 TOS:0x0 ID:1587 IpLen:20 DgmLen:80 DF
+***AP*** Seq: 0x15196602  Ack: 0xA31DFD39  Win: 0xFFFF  TcpLen: 20

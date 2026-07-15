@@ -1,0 +1,28 @@
+{
+  "timestamp": "2018-03-23T16:10:25.202380-0600",
+  "flow_id": 1569003014264416,
+  "pcap_cnt": 567362,
+  "event_type": "alert",
+  "src_ip": "10.240.105.57",
+  "src_port": 44937,
+  "dest_ip": "10.47.3.100",
+  "dest_port": 123,
+  "proto": "UDP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2017919,
+    "rev": 2,
+    "signature": "ET DOS Possible NTP DDoS Inbound Frequent Un-Authed MON_LIST Requests IMPL 0x03",
+    "category": "Attempted Denial of Service",
+    "severity": 2
+  },
+  "app_proto": "failed",
+  "flow": {
+    "pkts_toserver": 2,
+    "pkts_toclient": 0,
+    "bytes_toserver": 180,
+    "bytes_toclient": 0,
+    "start": "2018-03-23T16:10:25.202336-0600"
+  }
+}

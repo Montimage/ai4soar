@@ -1,0 +1,6 @@
+[**] [1:2018959:2] ET POLICY PE EXE or DLL Windows file download HTTP [**]
+[Classification: Potential Corporate Privacy Violation] [Priority: 1]
+03/14-14:13:24.845200 67.196.50.144:80 -> 192.168.52.10:1060
+TCP TTL:128 TOS:0x0 ID:1442 IpLen:20 DgmLen:5880 DF
+***A**** Seq: 0x9A83C2E5  Ack: 0xBB77030F  Win: 0xFFFF  TcpLen: 20
+[Xref => http://doc.emergingthreats.net/bin/view/Main/2000419]

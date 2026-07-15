@@ -1,0 +1,28 @@
+{
+  "timestamp": "2018-03-24T11:10:33.801554-0600",
+  "flow_id": 1715339180718866,
+  "pcap_cnt": 1682284,
+  "event_type": "alert",
+  "src_ip": "10.47.5.156",
+  "src_port": 10591,
+  "dest_ip": "10.10.5.1",
+  "dest_port": 53,
+  "proto": "UDP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2014939,
+    "rev": 1,
+    "signature": "ET POLICY DNS Query for TOR Hidden Domain .onion Accessible Via TOR",
+    "category": "Potential Corporate Privacy Violation",
+    "severity": 1
+  },
+  "app_proto": "dns",
+  "flow": {
+    "pkts_toserver": 1,
+    "pkts_toclient": 0,
+    "bytes_toserver": 87,
+    "bytes_toclient": 0,
+    "start": "2018-03-24T11:10:33.801554-0600"
+  }
+}

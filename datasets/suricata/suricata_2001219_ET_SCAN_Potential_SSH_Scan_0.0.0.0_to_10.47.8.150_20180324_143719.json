@@ -1,0 +1,27 @@
+{
+  "timestamp": "2018-03-24T14:37:19.037299-0600",
+  "flow_id": 928532049924531,
+  "pcap_cnt": 169577,
+  "event_type": "alert",
+  "src_ip": "0.0.0.0",
+  "src_port": 26078,
+  "dest_ip": "10.47.8.150",
+  "dest_port": 22,
+  "proto": "TCP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2001219,
+    "rev": 20,
+    "signature": "ET SCAN Potential SSH Scan",
+    "category": "Attempted Information Leak",
+    "severity": 2
+  },
+  "flow": {
+    "pkts_toserver": 1,
+    "pkts_toclient": 0,
+    "bytes_toserver": 74,
+    "bytes_toclient": 0,
+    "start": "2018-03-24T14:37:19.037299-0600"
+  }
+}

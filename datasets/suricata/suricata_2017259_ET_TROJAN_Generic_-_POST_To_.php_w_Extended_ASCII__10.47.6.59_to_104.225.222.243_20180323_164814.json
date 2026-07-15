@@ -1,0 +1,38 @@
+{
+  "timestamp": "2018-03-23T16:48:14.914001-0600",
+  "flow_id": 252176927459372,
+  "pcap_cnt": 1452321,
+  "event_type": "alert",
+  "src_ip": "10.47.6.59",
+  "src_port": 40575,
+  "dest_ip": "104.225.222.243",
+  "dest_port": 8080,
+  "proto": "TCP",
+  "tx_id": 0,
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2017259,
+    "rev": 12,
+    "signature": "ET TROJAN Generic - POST To .php w/Extended ASCII Characters",
+    "category": "A Network Trojan was detected",
+    "severity": 1
+  },
+  "http": {
+    "hostname": "blog.cloudkicker.co",
+    "url": "/blog/index.php",
+    "http_user_agent": "Mozilla/4.0 (compatible; MSIE 7.0; America Online Browser 1.1; rev1.5; Windows NT 5.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)",
+    "http_method": "POST",
+    "protocol": "HTTP/1.1",
+    "status": 200,
+    "length": 0
+  },
+  "app_proto": "http",
+  "flow": {
+    "pkts_toserver": 7,
+    "pkts_toclient": 6,
+    "bytes_toserver": 1562,
+    "bytes_toclient": 446,
+    "start": "2018-03-23T16:48:14.821292-0600"
+  }
+}

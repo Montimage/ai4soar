@@ -1,0 +1,6 @@
+[**] [1:2011582:38] ET POLICY Vulnerable Java Version 1.6.x Detected [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:48.901914 192.168.40.10:1167 -> 31.3.153.147:80
+TCP TTL:53 TOS:0x0 ID:20602 IpLen:20 DgmLen:227 DF
+***A**** Seq: 0xDE3F2403  Ack: 0x9E85F387  Win: 0x1920  TcpLen: 20
+[Xref => http://www.oracle.com/technetwork/java/javase/2col/6u85-bugfixes-2298235.html][Xref => http://javatester.org/version.html]

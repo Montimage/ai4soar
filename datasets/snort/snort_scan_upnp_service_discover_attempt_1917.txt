@@ -1,0 +1,5 @@
+[**] [1:1917:6] SCAN UPnP service discover attempt [**]
+[Classification: Detection of a Network Scan] [Priority: 3]
+08/19-21:05:28.544971 192.168.23.10:1034 -> 239.255.255.250:1900
+UDP TTL:1 TOS:0x0 ID:66 IpLen:20 DgmLen:161
+Len: 133

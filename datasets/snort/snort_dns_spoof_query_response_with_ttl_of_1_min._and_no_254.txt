@@ -1,0 +1,5 @@
+[**] [1:254:4] DNS SPOOF query response with TTL of 1 min. and no authority [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+03/14-14:13:32.988223 4.2.2.3:53 -> 192.168.52.10:1044
+UDP TTL:54 TOS:0x0 ID:16027 IpLen:20 DgmLen:82
+Len: 54

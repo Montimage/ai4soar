@@ -1,0 +1,43 @@
+{
+  "timestamp": "2018-03-23T14:21:55.041780-0600",
+  "flow_id": 1393770069449632,
+  "pcap_cnt": 1401594,
+  "event_type": "alert",
+  "src_ip": "10.128.0.221",
+  "src_port": 46962,
+  "dest_ip": "10.47.1.1",
+  "dest_port": 443,
+  "proto": "TCP",
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2018372,
+    "rev": 2,
+    "signature": "ET CURRENT_EVENTS Malformed HeartBeat Request",
+    "category": "Potentially Bad Traffic",
+    "severity": 2
+  },
+  "tls": {
+    "subject": "C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, CN=d92c11ece94546685d283c62baa542e1f4e65323e4c865aa71cd5bff8dfc95b7/emailAddress=support@paloaltonetworks.com",
+    "issuerdn": "C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, OU=Support, CN=localhost/emailAddress=support@paloaltonetworks.com",
+    "serial": "2C:A6:E0:4A:49:EF:E9:5D",
+    "fingerprint": "22:0e:91:8f:fb:d0:f8:82:c9:79:4c:7f:b9:5a:8a:ea:7f:ca:58:b6",
+    "version": "TLS 1.2",
+    "notbefore": "2018-02-22T22:36:47",
+    "notafter": "2028-02-20T22:36:47"
+  },
+  "vars": {
+    "flowbits": {
+      "ET.MalformedTLSHB": true,
+      "ET.HB.Request.CI": true
+    }
+  },
+  "app_proto": "tls",
+  "flow": {
+    "pkts_toserver": 9,
+    "pkts_toclient": 8,
+    "bytes_toserver": 2056,
+    "bytes_toclient": 3738,
+    "start": "2018-03-23T14:21:55.023456-0600"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "timestamp": "2018-03-23T16:25:23.232831-0600",
+  "flow_id": 620925549761330,
+  "pcap_cnt": 586491,
+  "event_type": "alert",
+  "src_ip": "10.240.105.57",
+  "src_port": 44391,
+  "dest_ip": "10.47.3.218",
+  "dest_port": 80,
+  "proto": "TCP",
+  "tx_id": 0,
+  "alert": {
+    "action": "allowed",
+    "gid": 1,
+    "signature_id": 2020912,
+    "rev": 2,
+    "signature": "ET WEB_SERVER Possible IIS Integer Overflow DoS (CVE-2015-1635)",
+    "category": "Web Application Attack",
+    "severity": 1
+  },
+  "http": {
+    "hostname": "10.47.3.218",
+    "url": "/",
+    "http_user_agent": "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)",
+    "http_content_type": "text/plain",
+    "http_method": "GET",
+    "protocol": "HTTP/1.1",
+    "status": 401,
+    "length": 16
+  },
+  "app_proto": "http",
+  "flow": {
+    "pkts_toserver": 7,
+    "pkts_toclient": 4,
+    "bytes_toserver": 1156,
+    "bytes_toclient": 1344,
+    "start": "2018-03-23T16:25:23.217906-0600"
+  }
+}
