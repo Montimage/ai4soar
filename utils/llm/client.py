@@ -1,8 +1,9 @@
 """
 Shared LLM client used by Path B (technique attribution) and Path D / playbook_generation.
 
-Supports OpenAI and Anthropic; auto-detects based on available API keys.
-Swap providers or add a new one (Bedrock, local Ollama, …) only here.
+Supports OpenAI, Anthropic and local Ollama; auto-detects OpenAI/Anthropic based on
+available API keys. Ollama has no API key, so it must be selected explicitly via
+LLM_PROVIDER=ollama. Swap providers or add a new one (Bedrock, …) only here.
 """
 
 import json
@@ -44,14 +45,20 @@ def call_llm(prompt: str, max_tokens: int = 1024) -> str:
     Route to the configured LLM provider.
 
     Resolution order:
-      1. explicit LLM_PROVIDER env-var
+      1. explicit LLM_PROVIDER env-var ("openai" | "anthropic" | "ollama")
       2. auto-detect: Anthropic key → Anthropic, else OpenAI key → OpenAI
 
+    Ollama is never auto-detected (no API key to probe) — it only runs when
+    LLM_PROVIDER=ollama is set explicitly.
+
     Raises:
-        LLMUnavailableError: if no API key is configured.
+        LLMUnavailableError: if no API key is configured, or Ollama is selected
+            but its server is not reachable.
     """
     provider = config.llm.provider.lower()
 
+    if provider == "ollama":
+        return _call_ollama(prompt, max_tokens)
     if provider == "anthropic" and config.llm.anthropic_api_key:
         return _call_anthropic(prompt, max_tokens)
     if provider == "openai" and config.llm.openai_api_key:
@@ -63,7 +70,8 @@ def call_llm(prompt: str, max_tokens: int = 1024) -> str:
         return _call_openai(prompt, max_tokens)
 
     raise LLMUnavailableError(
-        "No LLM API key configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY."
+        "No LLM API key configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
+        "or set LLM_PROVIDER=ollama to use a local model."
     )
 
 
@@ -109,3 +117,23 @@ def _call_anthropic(prompt: str, max_tokens: int) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     return resp.content[0].text
+
+
+def _call_ollama(prompt: str, max_tokens: int) -> str:
+    import ollama
+    client = ollama.Client(
+        host=f"http://{config.llm.ollama_host}:{config.llm.ollama_port}",
+        timeout=config.llm.timeout,
+    )
+    try:
+        resp = client.chat(
+            model=config.llm.ollama_model,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": 0.1, "num_predict": max_tokens},
+        )
+    except Exception as e:
+        raise LLMUnavailableError(
+            f"Ollama server not reachable at {config.llm.ollama_host}:{config.llm.ollama_port} "
+            f"(model={config.llm.ollama_model}). Is `ollama serve` running? Error: {e}"
+        ) from e
+    return resp["message"]["content"]
