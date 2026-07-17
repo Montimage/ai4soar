@@ -4,7 +4,6 @@ Pings each external service and returns status + latency.
 """
 
 import logging
-import os
 import socket
 import time
 
@@ -88,31 +87,36 @@ def _ping_nats():
 
 
 def _ping_llm():
-    """Check LLM availability: OpenAI key first, then local Ollama."""
-    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if openai_key:
+    """Check availability of the configured LLM provider."""
+    provider = config.llm.provider.lower()
+
+    if provider == "ollama":
+        host, port = config.llm.ollama_host, config.llm.ollama_port
+        t0 = time.monotonic()
+        try:
+            r = requests.get(f"http://{host}:{port}/api/tags", timeout=2)
+            latency = int((time.monotonic() - t0) * 1000)
+            if r.status_code == 200:
+                models = [m.get("name", "") for m in r.json().get("models", [])]
+                return {
+                    "status": "ok",
+                    "latency_ms": latency,
+                    "provider": f"Ollama ({len(models)} model{'s' if len(models) != 1 else ''}, "
+                                f"using {config.llm.ollama_model})",
+                    "url": f"http://{host}:{port}",
+                }
+            return {"status": "error", "error": f"Ollama HTTP {r.status_code}", "provider": "Ollama"}
+        except Exception as e:
+            return {"status": "error", "error": str(e), "provider": "Ollama"}
+
+    if provider == "anthropic" and config.llm.anthropic_api_key:
+        return {"status": "ok", "provider": "Anthropic (API key set)"}
+    if config.llm.openai_api_key:
         return {"status": "ok", "provider": "OpenAI (API key set)"}
+    if config.llm.anthropic_api_key:
+        return {"status": "ok", "provider": "Anthropic (API key set)"}
 
-    # Try Ollama on default port
-    ollama_host = os.getenv("OLLAMA_HOST", "localhost")
-    ollama_port = int(os.getenv("OLLAMA_PORT", "11434"))
-    t0 = time.monotonic()
-    try:
-        r = requests.get(f"http://{ollama_host}:{ollama_port}/api/tags", timeout=2)
-        latency = int((time.monotonic() - t0) * 1000)
-        if r.status_code == 200:
-            models = [m.get("name", "") for m in r.json().get("models", [])]
-            return {
-                "status": "ok",
-                "latency_ms": latency,
-                "provider": f"Ollama ({len(models)} model{'s' if len(models) != 1 else ''})",
-                "url": f"http://{ollama_host}:{ollama_port}",
-            }
-        return {"status": "error", "error": f"Ollama HTTP {r.status_code}", "provider": "Ollama"}
-    except Exception as e:
-        pass
-
-    return {"status": "not_configured", "provider": "None", "error": "No OpenAI key or local Ollama found"}
+    return {"status": "not_configured", "provider": "None", "error": "No API key set and LLM_PROVIDER is not ollama"}
 
 
 @health_bp.route('/health/integrations', methods=['GET'])

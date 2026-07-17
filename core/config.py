@@ -237,11 +237,14 @@ class MongoDBConfig:
 @dataclass
 class LLMConfig:
     """LLM configuration for Path B (technique attribution) and Path D (CACAO generation)"""
-    provider: str = "openai"                               # "openai" | "anthropic"
+    provider: str = "openai"                               # "openai" | "anthropic" | "ollama"
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     model: str = "gpt-4o-mini"                            # OpenAI model
     anthropic_model: str = "claude-haiku-4-5-20251001"    # Anthropic model
+    ollama_host: str = "localhost"                        # local Ollama server host
+    ollama_port: int = 11434                              # local Ollama server port
+    ollama_model: str = "llama3.1"                        # Ollama model tag
     technique_confidence_threshold: float = 0.70          # min confidence for Path B to proceed
     max_tokens: int = 1024
     timeout: float = 30.0
@@ -252,9 +255,13 @@ class LLMConfig:
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)
         self.model = os.getenv("LLM_MODEL", self.model)
         self.anthropic_model = os.getenv("ANTHROPIC_MODEL", self.anthropic_model)
+        self.ollama_host = os.getenv("OLLAMA_HOST", self.ollama_host)
+        self.ollama_port = int(os.getenv("OLLAMA_PORT", str(self.ollama_port)))
+        self.ollama_model = os.getenv("OLLAMA_MODEL", self.ollama_model)
         self.technique_confidence_threshold = float(
             os.getenv("LLM_CONFIDENCE_THRESHOLD", str(self.technique_confidence_threshold))
         )
+        self.timeout = float(os.getenv("LLM_TIMEOUT", str(self.timeout)))
 
 
 @dataclass
