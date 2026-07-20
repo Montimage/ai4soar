@@ -47,6 +47,14 @@ import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
+# Load API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) from the project .env,
+# same as core/config.py, so the script works without exporting them manually.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv optional; env vars can still be exported manually
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -188,7 +196,7 @@ def _openai_compat(spec: Dict, prompt: str, base_url: Optional[str], api_key: st
 
 def _anthropic(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
     import anthropic
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.Anthropic(api_key=_require_key("ANTHROPIC_API_KEY"))
     t0 = time.time()
     # NOTE: current Anthropic models reject temperature/top_p -> omit them.
     resp = client.messages.create(model=spec["model"], max_tokens=MAX_TOKENS,
@@ -199,10 +207,17 @@ def _anthropic(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
     return txt, usage, dt
 
 
+def _require_key(name: str) -> str:
+    key = os.getenv(name)
+    if not key:
+        raise RuntimeError(f"{name} not set (add it to .env or export it) — cannot call this model")
+    return key
+
+
 def call_model(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
     p = spec["provider"]
     if p == "openai":
-        return _openai_compat(spec, prompt, None, os.environ["OPENAI_API_KEY"])
+        return _openai_compat(spec, prompt, None, _require_key("OPENAI_API_KEY"))
     if p == "ollama":
         base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         return _openai_compat(spec, prompt, base, "ollama")
@@ -375,8 +390,9 @@ def main():
                     except Exception as e:
                         rec = {"key": key, "raw": "", "usage": {"in": 0, "out": 0},
                                "latency": 0.0, "error": f"{type(e).__name__}: {e}"}
-                    cache[key] = rec
-                    cache_fp.write(json.dumps(rec) + "\n"); cache_fp.flush()
+                    if rec["error"] is None:
+                        cache[key] = rec
+                        cache_fp.write(json.dumps(rec) + "\n"); cache_fp.flush()
                 if rec is None:      # score-only but not cached
                     continue
                 pred = parse_prediction(rec["raw"])
