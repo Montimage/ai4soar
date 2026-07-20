@@ -55,7 +55,8 @@ VOCAB_ALL   = os.path.join(ROOT, "data", "attack_enterprise_all.json")
 VOCAB_PAR   = os.path.join(ROOT, "data", "attack_enterprise_parents.json")
 TESTSET     = os.path.join(ROOT, "datasets", "eval", "path_b_test_clean.jsonl")
 OUT_DIR     = os.path.join(ROOT, "output", "llm_eval")
-CACHE_PATH  = os.path.join(OUT_DIR, "raw_cache.jsonl")
+# raw_cache.jsonl now lives inside the run's --out dir (see main); each output
+# folder keeps its own cache, so a custom --out is fully self-contained.
 
 # ---------------------------------------------------------------------------
 # Model registry — provider, model id, and $/1M tokens (input, output).
@@ -79,7 +80,7 @@ MODELS: List[Dict] = [
     {"name": "mistral-nemo:12b",      "provider": "ollama",    "model": "mistral-nemo:12b",      "price": (0, 0)},
     {"name": "gemma2:9b",             "provider": "ollama",    "model": "gemma2:9b",             "price": (0, 0)},
     {"name": "phi4:14b",              "provider": "ollama",    "model": "phi4:14b",              "price": (0, 0)},
-    {"name": "deepcoder:1.5b",        "provider": "ollama",    "model": "deepcoder",             "price": (0, 0)},
+    {"name": "deepcoder:1.5b",        "provider": "ollama",    "model": "deepcoder:1.5b",        "price": (0, 0)},
 ]
 
 MAX_TOKENS = 300  # attribution output is tiny; keep small
@@ -290,10 +291,10 @@ def cache_key(model_name: str, condition: str, alert_id: str, prompt: str) -> st
     h = hashlib.sha1(prompt.encode()).hexdigest()[:8]
     return f"{model_name}|{condition}|{alert_id}|{h}"
 
-def load_cache() -> Dict[str, Dict]:
+def load_cache(cache_path: str) -> Dict[str, Dict]:
     c = {}
-    if os.path.exists(CACHE_PATH):
-        for line in open(CACHE_PATH):
+    if os.path.exists(cache_path):
+        for line in open(cache_path):
             line = line.strip()
             if line:
                 r = json.loads(line)
@@ -341,19 +342,20 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
+    cache_path = os.path.join(args.out, "raw_cache.jsonl")
     names, tactics, valid_ids = load_vocab(args.vocab)
     vocab_str = vocab_string(names)
     alerts = load_alerts(args.testset, args.limit, args.sample)
     conditions = ["stripped", "visible"] if args.condition == "both" else [args.condition]
     selected = [m for m in MODELS if (not args.models or m["name"] in args.models.split(","))]
-    cache = load_cache()
+    cache = load_cache(cache_path)
 
     print(f"models={[m['name'] for m in selected]}")
     print(f"alerts={len(alerts)}  conditions={conditions}  vocab={args.vocab} ({len(names)} shown)  "
           f"score_only={args.score_only}")
 
     rows_out = []
-    cache_fp = open(CACHE_PATH, "a")
+    cache_fp = open(cache_path, "a")
     for spec in selected:
         for cond in conditions:
             for a in alerts:
@@ -415,7 +417,7 @@ def main():
               f"{pct('tactic_correct'):8.1f} {100-pct('in_vocab'):6.1f} {jsonp:6.1f} {errs:4d} "
               f"{lat:6.2f} {cost:8.4f}")
     print("=" * 130)
-    print(f"\nper-instance detail: {detail}\nraw cache: {CACHE_PATH}")
+    print(f"\nper-instance detail: {detail}\nraw cache: {cache_path}")
 
 
 if __name__ == "__main__":
