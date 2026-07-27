@@ -81,14 +81,17 @@ MODELS: List[Dict] = [
     {"name": "gpt-5-high",            "provider": "openai",    "model": "gpt-5",                 "price": (1.25, 10.0), "reasoning_effort": "high"},
     {"name": "claude-haiku-4-5",      "provider": "anthropic", "model": "claude-haiku-4-5",      "price": (1.00, 5.00)},
     {"name": "claude-sonnet-5",       "provider": "anthropic", "model": "claude-sonnet-5",       "price": (3.00, 15.0)},
-    {"name": "qwen2.5:0.5b",          "provider": "ollama",    "model": "qwen2.5:0.5b",          "price": (0, 0)},
-    {"name": "llama3.2:3b",           "provider": "ollama",    "model": "llama3.2:3b",           "price": (0, 0)},
     {"name": "llama3.1:8b",           "provider": "ollama",    "model": "llama3.1:8b",           "price": (0, 0)},
-    {"name": "qwen2.5:14b-instruct",  "provider": "ollama",    "model": "qwen2.5:14b-instruct",  "price": (0, 0)},
-    {"name": "mistral-nemo:12b",      "provider": "ollama",    "model": "mistral-nemo:12b",      "price": (0, 0)},
-    {"name": "gemma2:9b",             "provider": "ollama",    "model": "gemma2:9b",             "price": (0, 0)},
+    {"name": "llama3.2:3b",           "provider": "ollama",    "model": "llama3.2:3b",           "price": (0, 0)},
+    {"name": "qwen3-coder-next:latest",  "provider": "ollama",    "model": "qwen3-coder-next:latest",  "price": (0, 0)},
+    {"name": "qwen3.6:35b",           "provider": "ollama",    "model": "qwen3.6:35b",           "price": (0, 0)},
+    {"name": "mistral:7b",            "provider": "ollama",    "model": "mistral:7b",            "price": (0, 0)},
+    {"name": "gemma4:12b",            "provider": "ollama",    "model": "gemma4:12b",            "price": (0, 0)},
+    {"name": "gemma3:12b",            "provider": "ollama",    "model": "gemma3:12b",            "price": (0, 0)},
+    {"name": "gemma2:27b",            "provider": "ollama",    "model": "gemma2:27b",            "price": (0, 0)},
+    {"name": "phi3:14b",              "provider": "ollama",    "model": "phi3:14b",              "price": (0, 0)},
     {"name": "phi4:14b",              "provider": "ollama",    "model": "phi4:14b",              "price": (0, 0)},
-    {"name": "deepcoder:1.5b",        "provider": "ollama",    "model": "deepcoder:1.5b",        "price": (0, 0)},
+    {"name": "gpt-oss:20b",           "provider": "ollama",    "model": "gpt-oss:20b",           "price": (0, 0)},
 ]
 
 MAX_TOKENS = 300  # attribution output is tiny; keep small
