@@ -107,14 +107,17 @@ You MUST choose every technique_id from this list (id: name), and from nowhere e
 Alert:
 {alert}
 
-Respond with a JSON object ONLY (no markdown, no commentary):
-{{"techniques": ["T1059", "T1078", "T1566", "T1105", "T1204"], "reasoning": "one short sentence"}}
+Respond with a JSON object ONLY (no markdown, no commentary), in this exact SHAPE
+(the IDs below are placeholders showing the format — do NOT copy them):
+{{"techniques": ["Txxxx", "Txxxx", "Txxxx", "Txxxx", "Txxxx"], "reasoning": "one short sentence"}}
 
 Rules:
 - Provide EXACTLY 5 technique IDs, ranked most likely first, with no duplicates.
+- The "Txxxx" above are a FORMAT EXAMPLE ONLY — do not reuse them. Choose the real
+  IDs from the list above based on what THIS alert actually shows.
 - Every ID MUST be one of the IDs in the list above.
-- If you are confident of a specific sub-technique (e.g. T1059.001), use it;
-  otherwise use the parent technique ID (e.g. T1059).
+- If you are confident of a specific sub-technique (e.g. use the "id: name" line for
+  it), use it; otherwise use the parent technique ID.
 - Output the JSON and nothing else."""
 
 
