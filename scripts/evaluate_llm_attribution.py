@@ -70,7 +70,8 @@ OUT_DIR     = os.path.join(ROOT, "output", "llm_eval")
 # ---------------------------------------------------------------------------
 MAX_TOKENS   = 300
 DEFAULT_NUM_CTX = 16384
-THINK_TOKENS = 4096
+THINK_TOKENS = 8192
+THINK_NUM_CTX = 32768
 
 MODELS: List[Dict] = [
     {"name": "gpt-4o-mini",           "provider": "openai",    "model": "gpt-4o-mini",           "price": (0.15, 0.60)},
@@ -85,15 +86,15 @@ MODELS: List[Dict] = [
     {"name": "llama3.1:8b",           "provider": "ollama",    "model": "llama3.1:8b",           "price": (0, 0)},
     {"name": "llama3.2:3b",           "provider": "ollama",    "model": "llama3.2:3b",           "price": (0, 0)},
     {"name": "qwen3-coder-next:latest",  "provider": "ollama",    "model": "qwen3-coder-next:latest",  "price": (0, 0)},
-    {"name": "qwen3.6:35b",           "provider": "ollama",    "model": "qwen3.6:35b",           "price": (0, 0), "max_tokens": THINK_TOKENS},
+    {"name": "qwen3.6:35b",           "provider": "ollama",    "model": "qwen3.6:35b",           "price": (0, 0), "max_tokens": THINK_TOKENS, "num_ctx": THINK_NUM_CTX},
     {"name": "mistral:7b",            "provider": "ollama",    "model": "mistral:7b",            "price": (0, 0)},
-    {"name": "gemma4:12b",            "provider": "ollama",    "model": "gemma4:12b",            "price": (0, 0), "max_tokens": THINK_TOKENS},
+    {"name": "gemma4:12b",            "provider": "ollama",    "model": "gemma4:12b",            "price": (0, 0), "max_tokens": THINK_TOKENS, "num_ctx": THINK_NUM_CTX},
     {"name": "gemma3:12b",            "provider": "ollama",    "model": "gemma3:12b",            "price": (0, 0)},
     # gemma2:27b maxes out at an 8K context, thus run it with --vocab parents.
     {"name": "gemma2:27b",            "provider": "ollama",    "model": "gemma2:27b",            "price": (0, 0), "num_ctx": 8192},
     {"name": "phi3:14b",              "provider": "ollama",    "model": "phi3:14b",              "price": (0, 0)},
     {"name": "phi4:14b",              "provider": "ollama",    "model": "phi4:14b",              "price": (0, 0)},
-    {"name": "gpt-oss:20b",           "provider": "ollama",    "model": "gpt-oss:20b",           "price": (0, 0), "max_tokens": THINK_TOKENS},
+    {"name": "gpt-oss:20b",           "provider": "ollama",    "model": "gpt-oss:20b",           "price": (0, 0), "max_tokens": THINK_TOKENS, "num_ctx": THINK_NUM_CTX},
 ]
 
 # ---------------------------------------------------------------------------
@@ -494,13 +495,16 @@ def main():
             f.write(json.dumps(r) + "\n")
 
     # aggregate + print summary  (P@k = parent-level hit@k, E@k = exact-level hit@k,
-    # OOV1% = top-1 not in vocab [rows], OOV% = predicted ids not in vocab [all ranks])
-    print("\n" + "=" * 138)
+    # OOV1% = top-1 not in vocab [rows], OOV% = predicted ids not in vocab [all ranks],
+    # salv = rows whose answer channel was empty so the ranking came from the thinking
+    # channel -- those rows score "mentioned while deliberating", NOT a ranked answer,
+    # so any row with salv>0 is not a clean measurement: raise max_tokens and re-run)
+    print("\n" + "=" * 146)
     hdr = f"{'model':22s} {'cond':9s} {'n':>5s} " \
           f"{'P@1':>6s} {'P@3':>6s} {'P@5':>6s} {'E@1':>6s} {'E@3':>6s} {'E@5':>6s} " \
           f"{'tactic%':>8s} {'OOV1%':>6s} {'OOV%':>6s} {'json%':>6s} {'err':>4s} " \
-          f"{'lat_s':>6s} {'cost$':>8s}"
-    print(hdr); print("-" * 138)
+          f"{'salv':>5s} {'lat_s':>6s} {'cost$':>8s}"
+    print(hdr); print("-" * 146)
     agg = collections.defaultdict(list)
     for r in rows_out:
         agg[(r["model"], r["condition"])].append(r)
@@ -514,12 +518,13 @@ def main():
         # micro rate: share of ALL predicted ids (every rank, every row) outside the vocab
         n_ids = sum(r.get("n_ranked", 0) for r in ok)
         oovp = 100.0 * sum(r.get("n_oov", 0) for r in ok) / n_ids if n_ids else 0.0
+        nsalv = sum(1 for r in ok if r.get("from_reasoning"))
         print(f"{m:22s} {c:9s} {n:5d} "
               f"{pct('parent_hit1'):6.1f} {pct('parent_hit3'):6.1f} {pct('parent_hit5'):6.1f} "
               f"{pct('exact_hit1'):6.1f} {pct('exact_hit3'):6.1f} {pct('exact_hit5'):6.1f} "
               f"{pct('tactic_correct'):8.1f} {100-pct('in_vocab'):6.1f} {oovp:6.1f} "
-              f"{jsonp:6.1f} {errs:4d} {lat:6.2f} {cost:8.4f}")
-    print("=" * 138)
+              f"{jsonp:6.1f} {errs:4d} {nsalv:5d} {lat:6.2f} {cost:8.4f}")
+    print("=" * 146)
 
     for (m, c), rs in sorted(agg.items()):
         cut   = [r for r in rs if r.get("finish") == "length"]
