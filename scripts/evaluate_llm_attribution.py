@@ -2,9 +2,6 @@
 """
 Standalone LLM MITRE-attribution evaluator for AI4SOAR (Phase 1 — Step 1: attribution).
 
-Self-contained on purpose: it does NOT import core/ so you can iterate freely on the
-prompt, vocabulary, and scoring here, and only fold changes into core/ once happy.
-
 What it does
 ------------
 For each alert (text), asks each LLM to pick the SINGLE most likely MITRE ATT&CK
@@ -332,6 +329,7 @@ def score(pred: Dict, gt: Dict, tactics: Dict[str, List[str]], valid_ids: set) -
     gt_parents = set(gt["technique_parents"])
     gt_tactics = set(gt.get("tactic", []))
     pred_tactics = set(tactics.get(parent, [])) if parent else set()
+    oov = [t for t in ranked if t not in valid_ids]
 
     def hit_parent(k: int) -> bool:
         return any(p in gt_parents for p in parents_ranked[:k])
@@ -343,6 +341,10 @@ def score(pred: Dict, gt: Dict, tactics: Dict[str, List[str]], valid_ids: set) -
         "pred_id":       top,
         "pred_parent":   parent,
         "in_vocab":      bool(top and top in valid_ids),
+        "n_ranked":      len(ranked),
+        "n_oov":         len(oov),
+        "oov_ids":       oov,
+        "any_oov":       bool(oov),
         "parent_hit1":   hit_parent(1),
         "parent_hit3":   hit_parent(3),
         "parent_hit5":   hit_parent(5),
@@ -491,12 +493,14 @@ def main():
         for r in rows_out:
             f.write(json.dumps(r) + "\n")
 
-    # aggregate + print summary  (P@k = parent-level hit@k, E@k = exact-level hit@k)
-    print("\n" + "=" * 130)
+    # aggregate + print summary  (P@k = parent-level hit@k, E@k = exact-level hit@k,
+    # OOV1% = top-1 not in vocab [rows], OOV% = predicted ids not in vocab [all ranks])
+    print("\n" + "=" * 138)
     hdr = f"{'model':22s} {'cond':9s} {'n':>5s} " \
           f"{'P@1':>6s} {'P@3':>6s} {'P@5':>6s} {'E@1':>6s} {'E@3':>6s} {'E@5':>6s} " \
-          f"{'tactic%':>8s} {'OOV%':>6s} {'json%':>6s} {'err':>4s} {'lat_s':>6s} {'cost$':>8s}"
-    print(hdr); print("-" * 130)
+          f"{'tactic%':>8s} {'OOV1%':>6s} {'OOV%':>6s} {'json%':>6s} {'err':>4s} " \
+          f"{'lat_s':>6s} {'cost$':>8s}"
+    print(hdr); print("-" * 138)
     agg = collections.defaultdict(list)
     for r in rows_out:
         agg[(r["model"], r["condition"])].append(r)
@@ -507,12 +511,15 @@ def main():
         lat = sum(r["latency"] for r in ok) / len(ok) if ok else 0.0
         cost = sum(r["cost"] for r in rs)
         jsonp = 100.0 * sum(1 for r in ok if r["json_valid"]) / len(ok) if ok else 0.0
+        # micro rate: share of ALL predicted ids (every rank, every row) outside the vocab
+        n_ids = sum(r.get("n_ranked", 0) for r in ok)
+        oovp = 100.0 * sum(r.get("n_oov", 0) for r in ok) / n_ids if n_ids else 0.0
         print(f"{m:22s} {c:9s} {n:5d} "
               f"{pct('parent_hit1'):6.1f} {pct('parent_hit3'):6.1f} {pct('parent_hit5'):6.1f} "
               f"{pct('exact_hit1'):6.1f} {pct('exact_hit3'):6.1f} {pct('exact_hit5'):6.1f} "
-              f"{pct('tactic_correct'):8.1f} {100-pct('in_vocab'):6.1f} {jsonp:6.1f} {errs:4d} "
-              f"{lat:6.2f} {cost:8.4f}")
-    print("=" * 130)
+              f"{pct('tactic_correct'):8.1f} {100-pct('in_vocab'):6.1f} {oovp:6.1f} "
+              f"{jsonp:6.1f} {errs:4d} {lat:6.2f} {cost:8.4f}")
+    print("=" * 138)
 
     for (m, c), rs in sorted(agg.items()):
         cut   = [r for r in rs if r.get("finish") == "length"]
@@ -525,6 +532,16 @@ def main():
             if salv:  bits.append(f"{len(salv)} salvaged from the thinking channel")
             print(f"WARNING {m} [{c}]: " + "; ".join(bits) +
                   " -> raise this model's \"max_tokens\" in MODELS and re-run into a fresh --out")
+
+    for (m, c), rs in sorted(agg.items()):
+        ok = [r for r in rs if not r["error"]]
+        n_ids = sum(r.get("n_ranked", 0) for r in ok)
+        n_oov = sum(r.get("n_oov", 0) for r in ok)
+        if n_ids and n_oov / n_ids >= 0.05:
+            ex = sorted({t for r in ok for t in r.get("oov_ids", [])})[:6]
+            print(f"WARNING {m} [{c}]: {n_oov}/{n_ids} predicted ids are outside the "
+                  f"v19.1 vocab ({', '.join(ex)}...) -> the model is recalling ATT&CK from "
+                  f"its weights, not selecting from the candidate list in the prompt")
 
     print(f"\nper-instance detail: {detail}\nraw cache: {cache_path}")
 
