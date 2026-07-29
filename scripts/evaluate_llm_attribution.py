@@ -71,6 +71,10 @@ OUT_DIR     = os.path.join(ROOT, "output", "llm_eval")
 # Ollama models are free (0/0); cost column is ignored for them.
 # Edit freely; --models selects a subset by name.
 # ---------------------------------------------------------------------------
+MAX_TOKENS   = 300
+DEFAULT_NUM_CTX = 16384
+THINK_TOKENS = 4096
+
 MODELS: List[Dict] = [
     {"name": "gpt-4o-mini",           "provider": "openai",    "model": "gpt-4o-mini",           "price": (0.15, 0.60)},
     {"name": "gpt-4o",                "provider": "openai",    "model": "gpt-4o",                "price": (2.50, 10.0)},
@@ -84,17 +88,16 @@ MODELS: List[Dict] = [
     {"name": "llama3.1:8b",           "provider": "ollama",    "model": "llama3.1:8b",           "price": (0, 0)},
     {"name": "llama3.2:3b",           "provider": "ollama",    "model": "llama3.2:3b",           "price": (0, 0)},
     {"name": "qwen3-coder-next:latest",  "provider": "ollama",    "model": "qwen3-coder-next:latest",  "price": (0, 0)},
-    {"name": "qwen3.6:35b",           "provider": "ollama",    "model": "qwen3.6:35b",           "price": (0, 0)},
+    {"name": "qwen3.6:35b",           "provider": "ollama",    "model": "qwen3.6:35b",           "price": (0, 0), "max_tokens": THINK_TOKENS},
     {"name": "mistral:7b",            "provider": "ollama",    "model": "mistral:7b",            "price": (0, 0)},
-    {"name": "gemma4:12b",            "provider": "ollama",    "model": "gemma4:12b",            "price": (0, 0)},
+    {"name": "gemma4:12b",            "provider": "ollama",    "model": "gemma4:12b",            "price": (0, 0), "max_tokens": THINK_TOKENS},
     {"name": "gemma3:12b",            "provider": "ollama",    "model": "gemma3:12b",            "price": (0, 0)},
-    {"name": "gemma2:27b",            "provider": "ollama",    "model": "gemma2:27b",            "price": (0, 0)},
+    # gemma2:27b maxes out at an 8K context, thus run it with --vocab parents.
+    {"name": "gemma2:27b",            "provider": "ollama",    "model": "gemma2:27b",            "price": (0, 0), "num_ctx": 8192},
     {"name": "phi3:14b",              "provider": "ollama",    "model": "phi3:14b",              "price": (0, 0)},
     {"name": "phi4:14b",              "provider": "ollama",    "model": "phi4:14b",              "price": (0, 0)},
-    {"name": "gpt-oss:20b",           "provider": "ollama",    "model": "gpt-oss:20b",           "price": (0, 0)},
+    {"name": "gpt-oss:20b",           "provider": "ollama",    "model": "gpt-oss:20b",           "price": (0, 0), "max_tokens": THINK_TOKENS},
 ]
-
-MAX_TOKENS = 300  # attribution output is tiny; keep small
 
 # ---------------------------------------------------------------------------
 # Prompt template — edit here to iterate. {vocab} and {alert} are filled in.
@@ -166,13 +169,32 @@ def alert_to_text(alert: Dict, condition: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Provider calls -> (raw_text, usage{in,out}, latency_s)
+# Provider calls -> (raw_text, usage{in,out}, latency_s, meta)
+#
+# meta carries the two things needed to tell "the model answered wrong" apart from
+# "the harness never saw an answer": `finish` (finish_reason — "length" means the
+# output budget ran out) and `reasoning` (thinking-model output, which Ollama and
+# some OpenAI-compatible servers return in a separate field, leaving content empty).
 # ---------------------------------------------------------------------------
 def _is_reasoning(model: str) -> bool:
     """gpt-5*, o1/o3/o4* are reasoning models with a different chat-completions contract."""
     return model.startswith("gpt-5") or re.match(r"^o[134]", model) is not None
 
-def _openai_compat(spec: Dict, prompt: str, base_url: Optional[str], api_key: str) -> Tuple[str, Dict, float]:
+def _reasoning_text(msg) -> str:
+    """Thinking output, wherever the server put it (field name varies by backend)."""
+    for attr in ("reasoning_content", "reasoning", "thinking"):
+        val = getattr(msg, attr, None)
+        if isinstance(val, str) and val.strip():
+            return val
+    extra = getattr(msg, "model_extra", None) or {}
+    for attr in ("reasoning_content", "reasoning", "thinking"):
+        val = extra.get(attr)
+        if isinstance(val, str) and val.strip():
+            return val
+    return ""
+
+
+def _openai_compat(spec: Dict, prompt: str, base_url: Optional[str], api_key: str) -> Tuple[str, Dict, float, Dict]:
     import openai
     client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
     kwargs = dict(model=spec["model"],
@@ -186,10 +208,11 @@ def _openai_compat(spec: Dict, prompt: str, base_url: Optional[str], api_key: st
         kwargs["reasoning_effort"] = effort
         kwargs["seed"] = 0
     else:
-        kwargs["max_tokens"] = MAX_TOKENS
+        kwargs["max_tokens"] = spec.get("max_tokens", MAX_TOKENS)
         kwargs["temperature"] = 0
         if spec["provider"] == "ollama":
-            kwargs["extra_body"] = {"options": {"seed": 0}}
+            kwargs["extra_body"] = {"options": {
+                "seed": 0, "num_ctx": spec.get("num_ctx", DEFAULT_NUM_CTX)}}
         else:
             kwargs["seed"] = 0
     t0 = time.time()
@@ -197,20 +220,28 @@ def _openai_compat(spec: Dict, prompt: str, base_url: Optional[str], api_key: st
     dt = time.time() - t0
     u = resp.usage
     usage = {"in": getattr(u, "prompt_tokens", 0) or 0, "out": getattr(u, "completion_tokens", 0) or 0}
-    return resp.choices[0].message.content or "", usage, dt
+    choice = resp.choices[0]
+    meta = {"finish": choice.finish_reason, "reasoning": _reasoning_text(choice.message)}
+    return choice.message.content or "", usage, dt, meta
 
 
-def _anthropic(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
+def _anthropic(spec: Dict, prompt: str) -> Tuple[str, Dict, float, Dict]:
     import anthropic
     client = anthropic.Anthropic(api_key=_require_key("ANTHROPIC_API_KEY"))
     t0 = time.time()
     # NOTE: current Anthropic models reject temperature/top_p -> omit them.
-    resp = client.messages.create(model=spec["model"], max_tokens=MAX_TOKENS,
+    resp = client.messages.create(model=spec["model"],
+                                  max_tokens=spec.get("max_tokens", MAX_TOKENS),
                                   messages=[{"role": "user", "content": prompt}])
     dt = time.time() - t0
     txt = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+    think = "".join(getattr(b, "thinking", "") for b in resp.content
+                    if getattr(b, "type", "") == "thinking")
     usage = {"in": resp.usage.input_tokens, "out": resp.usage.output_tokens}
-    return txt, usage, dt
+    # stop_reason "max_tokens" is Anthropic's equivalent of finish_reason "length"
+    meta = {"finish": "length" if resp.stop_reason == "max_tokens" else resp.stop_reason,
+            "reasoning": think}
+    return txt, usage, dt, meta
 
 
 def _require_key(name: str) -> str:
@@ -220,7 +251,7 @@ def _require_key(name: str) -> str:
     return key
 
 
-def call_model(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
+def call_model(spec: Dict, prompt: str) -> Tuple[str, Dict, float, Dict]:
     p = spec["provider"]
     if p == "openai":
         return _openai_compat(spec, prompt, None, _require_key("OPENAI_API_KEY"))
@@ -236,15 +267,25 @@ def call_model(spec: Dict, prompt: str) -> Tuple[str, Dict, float]:
 # Parse model output
 # ---------------------------------------------------------------------------
 _TCODE = re.compile(r"T\d{4}(?:\.\d{3})?")
+_THINK = re.compile(r"<(think|thinking|reasoning)>.*?(</\1>|\Z)", re.S)
 
-def parse_prediction(raw: str) -> Dict:
-    """Return {ranked, technique_id, json_valid, parse_ok}.
+def _strip_think(s: str) -> str:
+    """Drop inline thinking blocks: their candidate IDs are not the model's answer."""
+    return _THINK.sub("", s).strip()
+
+def parse_prediction(raw: str, reasoning: str = "") -> Dict:
+    """Return {ranked, technique_id, json_valid, parse_ok, from_reasoning}.
 
     `ranked` is the ordered list of predicted technique IDs (deduped, order kept);
     `technique_id` is the top-1 (kept for OOV/json/tactic single-pick metrics).
+    `reasoning` is the separate thinking channel, used only as a last resort when the
+    answer channel is empty (thinking model truncated before its final message);
+    such rows are flagged `from_reasoning` and never counted as valid JSON.
     """
-    out = {"ranked": [], "technique_id": None, "json_valid": False, "parse_ok": False}
-    s = raw.strip()
+    out = {"ranked": [], "technique_id": None, "json_valid": False, "parse_ok": False,
+           "from_reasoning": False}
+    body = _strip_think(raw)
+    s = body
     if s.startswith("```"):
         s = s.split("```")[1] if len(s.split("```")) > 1 else s
         if s.startswith("json"):
@@ -260,7 +301,7 @@ def parse_prediction(raw: str) -> Dict:
     except Exception:
         pass
     if not ranked:                                    # fallback: all T-codes in text, in order
-        ranked = _TCODE.findall(raw)
+        ranked = _TCODE.findall(body)
     # dedup, preserve order
     seen, deduped = set(), []
     for t in ranked:
@@ -269,6 +310,13 @@ def parse_prediction(raw: str) -> Dict:
     out["ranked"] = deduped
     out["technique_id"] = deduped[0] if deduped else None
     out["parse_ok"] = out["technique_id"] is not None
+    if not out["ranked"] and reasoning.strip():
+        # answer channel empty -> salvage from the thinking channel, flagged as such
+        alt = parse_prediction(reasoning)
+        if alt["ranked"]:
+            alt["json_valid"] = False
+            alt["from_reasoning"] = True
+            return alt
     return out
 
 
@@ -308,9 +356,18 @@ def score(pred: Dict, gt: Dict, tactics: Dict[str, List[str]], valid_ids: set) -
 # ---------------------------------------------------------------------------
 # Cache (keyed by model|condition|alert_id) so re-runs / re-scoring are free
 # ---------------------------------------------------------------------------
-def cache_key(model_name: str, condition: str, alert_id: str, prompt: str) -> str:
+def cache_key(model_name: str, condition: str, alert_id: str, prompt: str,
+              spec: Optional[Dict] = None) -> str:
+    """Key = model|condition|alert|prompt-hash, plus the runtime knobs that change the
+    answer. Ollama gets a ctx/out suffix so rows produced under a different context
+    window or output budget are not silently reused (entries cached before num_ctx was
+    sent were computed on a truncated prompt and must not be mixed in). API providers
+    keep the original key shape so existing paid runs stay valid."""
     h = hashlib.sha1(prompt.encode()).hexdigest()[:8]
-    return f"{model_name}|{condition}|{alert_id}|{h}"
+    base = f"{model_name}|{condition}|{alert_id}|{h}"
+    if spec and spec["provider"] == "ollama":
+        base += f"|ctx{spec.get('num_ctx', DEFAULT_NUM_CTX)}|out{spec.get('max_tokens', MAX_TOKENS)}"
+    return base
 
 def load_cache(cache_path: str) -> Dict[str, Dict]:
     c = {}
@@ -375,6 +432,18 @@ def main():
     print(f"alerts={len(alerts)}  conditions={conditions}  vocab={args.vocab} ({len(names)} shown)  "
           f"score_only={args.score_only}")
 
+    approx_prompt_tok = int(len(PROMPT_TEMPLATE.format(vocab=vocab_str, alert="x" * 700)) / 2.5)
+    print(f"prompt ~{approx_prompt_tok} tokens (vocab={args.vocab})")
+    for spec in selected:
+        if spec["provider"] != "ollama":
+            continue
+        ctx = spec.get("num_ctx", DEFAULT_NUM_CTX)
+        if approx_prompt_tok + spec.get("max_tokens", MAX_TOKENS) > ctx:
+            print(f"WARNING {spec['name']}: prompt+output (~{approx_prompt_tok}+"
+                  f"{spec.get('max_tokens', MAX_TOKENS)}) exceeds num_ctx={ctx} — the server will "
+                  f"drop the front of the prompt (the vocab list). Use --vocab parents "
+                  f"or raise num_ctx for this model.")
+
     rows_out = []
     cache_fp = open(cache_path, "a")
     for spec in selected:
@@ -387,26 +456,31 @@ def main():
                 else:                                 # Wazuh/OTRF format
                     text = alert_to_text(a["alert"], cond)
                 prompt = PROMPT_TEMPLATE.format(vocab=vocab_str, alert=text)
-                key = cache_key(spec["name"], cond, aid, prompt)
+                key = cache_key(spec["name"], cond, aid, prompt, spec)
                 rec = cache.get(key)
                 if rec is None and not args.score_only:
                     try:
-                        raw, usage, dt = call_model(spec, prompt)
-                        rec = {"key": key, "raw": raw, "usage": usage, "latency": dt, "error": None}
+                        raw, usage, dt, meta = call_model(spec, prompt)
+                        rec = {"key": key, "raw": raw, "usage": usage, "latency": dt,
+                               "error": None, "finish": meta.get("finish"),
+                               "reasoning": meta.get("reasoning", "")}
                     except Exception as e:
                         rec = {"key": key, "raw": "", "usage": {"in": 0, "out": 0},
-                               "latency": 0.0, "error": f"{type(e).__name__}: {e}"}
+                               "latency": 0.0, "error": f"{type(e).__name__}: {e}",
+                               "finish": None, "reasoning": ""}
                     if rec["error"] is None:
                         cache[key] = rec
                         cache_fp.write(json.dumps(rec) + "\n"); cache_fp.flush()
                 if rec is None:      # score-only but not cached
                     continue
-                pred = parse_prediction(rec["raw"])
+                pred = parse_prediction(rec["raw"], rec.get("reasoning") or "")
                 sc = score(pred, gt, tactics, valid_ids)
                 in_c, out_c = spec["price"]
                 cost = (rec["usage"]["in"] * in_c + rec["usage"]["out"] * out_c) / 1e6
                 rows_out.append({"model": spec["name"], "condition": cond, "alert_id": aid,
                                  "error": rec["error"], **pred, **sc,
+                                 "finish": rec.get("finish"),
+                                 "empty_answer": not (rec["raw"] or "").strip(),
                                  "latency": rec["latency"], "cost": cost,
                                  "in_tok": rec["usage"]["in"], "out_tok": rec["usage"]["out"]})
     cache_fp.close()
@@ -439,6 +513,19 @@ def main():
               f"{pct('tactic_correct'):8.1f} {100-pct('in_vocab'):6.1f} {jsonp:6.1f} {errs:4d} "
               f"{lat:6.2f} {cost:8.4f}")
     print("=" * 130)
+
+    for (m, c), rs in sorted(agg.items()):
+        cut   = [r for r in rs if r.get("finish") == "length"]
+        empty = [r for r in rs if r.get("empty_answer") and not r["error"]]
+        salv  = [r for r in rs if r.get("from_reasoning")]
+        if cut or empty or salv:
+            bits = []
+            if cut:   bits.append(f"{len(cut)}/{len(rs)} hit the output-token cap")
+            if empty: bits.append(f"{len(empty)} returned an empty answer channel")
+            if salv:  bits.append(f"{len(salv)} salvaged from the thinking channel")
+            print(f"WARNING {m} [{c}]: " + "; ".join(bits) +
+                  " -> raise this model's \"max_tokens\" in MODELS and re-run into a fresh --out")
+
     print(f"\nper-instance detail: {detail}\nraw cache: {cache_path}")
 
 
