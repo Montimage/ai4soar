@@ -70,7 +70,7 @@ OUT_DIR     = os.path.join(ROOT, "output", "llm_eval")
 # ---------------------------------------------------------------------------
 MAX_TOKENS   = 300
 DEFAULT_NUM_CTX = 16384
-THINK_TOKENS = 8192
+THINK_TOKENS = 16384
 THINK_NUM_CTX = 32768
 
 MODELS: List[Dict] = [
