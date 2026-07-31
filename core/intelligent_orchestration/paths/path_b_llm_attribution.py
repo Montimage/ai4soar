@@ -8,11 +8,24 @@ Output: Optional[PathResult] — None signals fall-through (LLM unavailable or
 The LLM identifies MITRE ATT&CK technique(s) from alert semantics, then
 the PlaybookLibrary returns parameterized CACAO templates for those techniques.
 Runs in parallel with Path C during Stage 2.
+
+Prompt, vocabulary and response parsing come from utils/llm/attribution.py — the same
+module the offline evaluator (scripts/evaluate_llm_attribution.py) drives, so the
+accuracy measured on the 37-alert benchmark describes this code path. Two consequences
+worth knowing:
+
+  * The candidate list is the FULL ATT&CK v19.1 Enterprise matrix (697 techniques), not
+    just the techniques the playbook library covers. The model attributes honestly and
+    we then map its ranking onto whatever templates exist; a correct attribution with no
+    template is a library gap, and is logged as one rather than being hidden by forcing
+    the model to pick a covered technique.
+  * That makes the prompt ~9.3K tokens. Local models MUST be given a context window
+    large enough for it (config.llm.num_ctx) or Ollama silently discards the front of
+    the prompt — the vocabulary — and accuracy collapses to near zero.
 """
 
-import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from core.config import config
 from core.intelligent_orchestration.enrichment.enriched_alert import EnrichedAlert
@@ -21,7 +34,15 @@ from core.intelligent_orchestration.parameterizer import PlaybookParameterizer
 from core.exceptions import LLMUnavailableError
 from core.intelligent_orchestration.path_result import PathResult
 from core.playbook_library.loader import PlaybookLibrary
-from utils.llm.client import alert_to_text, call_llm, strip_fences
+from utils.llm.attribution import (
+    build_prompt,
+    in_vocab,
+    load_vocab,
+    parse_prediction,
+    technique_name,
+    vocab_string,
+)
+from utils.llm.client import alert_to_text, attribution_spec, call_model, output_budget
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +63,14 @@ _TECHNIQUE_FALLBACK: Dict[str, str] = {
     "T1595.002": "T1110",
 }
 
+# Confidence assigned when the model returns a well-formed ranking
+_DERIVED_CONFIDENCE = {
+    "clean_full":    0.75,   # valid JSON, top-1 in vocab, full ranking returned
+    "clean_partial": 0.60,   # valid JSON, top-1 in vocab, short ranking
+    "regex":         0.50,   # ids recovered by regex from prose
+    "salvaged":      0.40,   # answer channel empty, ids taken from thinking channel
+}
+
 
 class PathBRecommender:
 
@@ -54,6 +83,7 @@ class PathBRecommender:
         self._library       = library
         self._ioc_extractor = ioc_extractor
         self._parameterizer = parameterizer
+        self._ctx_warned    = False
 
     def run(self, enriched: EnrichedAlert, k: int) -> Optional[PathResult]:
         """
@@ -62,6 +92,7 @@ class PathBRecommender:
         Returns None when:
           - LLM API key not configured
           - LLM call raises an exception
+          - the response yields no in-vocabulary technique ID
           - LLM confidence < threshold
           - Library has no playbooks for the attributed techniques
         """
@@ -78,109 +109,193 @@ class PathBRecommender:
         if not llm_result:
             return None
 
-        conf = float(llm_result.get("confidence", 0.0))
+        ranked   = llm_result["ranked"]
+        conf     = llm_result["confidence"]
+        reasoning = llm_result["reasoning"]
+
+        if not ranked:
+            return None
+
         if conf < config.llm.technique_confidence_threshold:
             logger.info(
                 f"[Path B] LLM confidence {conf:.2f} < threshold "
-                f"{config.llm.technique_confidence_threshold}"
+                f"{config.llm.technique_confidence_threshold} (ranked={ranked})"
             )
             return None
 
-        attributed_ids   = llm_result.get("technique_ids", [])
-        attributed_names = llm_result.get("technique_names", [])
-        reasoning        = llm_result.get("reasoning", "")
-
-        if not attributed_ids:
-            return None
-
-        iocs      = self._ioc_extractor.extract(enriched.raw)
-        playbooks: List[Dict] = []
-        seen: set = set()
-
-        for tid in attributed_ids:
-            for template in self._library.get_for_technique(tid):
-                if template["id"] not in seen:
-                    seen.add(template["id"])
-                    pb = self._parameterizer.parameterize(template, iocs, enriched.raw)
-                    playbooks.append(pb.to_dict())
+        iocs = self._ioc_extractor.extract(enriched.raw)
+        selected, playbooks = self._playbooks_for(ranked, iocs, enriched.raw, k)
 
         if not playbooks:
-            # Try semantic fallbacks before giving up — handles cases where the LLM
-            # correctly identifies a technique (e.g. T1498 DoS flood) that has no
-            # dedicated playbook yet.
-            fallback_ids: List[str] = []
-            for tid in attributed_ids:
-                target = _TECHNIQUE_FALLBACK.get(tid) or _TECHNIQUE_FALLBACK.get(tid.split(".")[0])
-                if target and target not in fallback_ids:
-                    fallback_ids.append(target)
-            for ftid in fallback_ids:
-                for template in self._library.get_for_technique(ftid):
-                    if template["id"] not in seen:
-                        seen.add(template["id"])
-                        pb = self._parameterizer.parameterize(template, iocs, enriched.raw)
-                        playbooks.append(pb.to_dict())
-            if playbooks:
-                logger.info(
-                    f"[Path B] No templates for {attributed_ids}; "
-                    f"fell back to {fallback_ids} → {len(playbooks)} playbook(s)"
-                )
-            else:
-                logger.info(
-                    f"[Path B] LLM attributed {attributed_ids} but library has no templates"
-                )
-                return None
+            logger.info(
+                f"[Path B] LLM attributed {ranked} but library has no templates "
+                f"(coverage gap)"
+            )
+            return None
 
-        playbooks = playbooks[:k]
         logger.info(
-            f"[Path B] LLM → {attributed_ids} (conf={conf:.2f}) "
+            f"[Path B] LLM → {ranked} (conf={conf:.2f}), acted on {selected} "
             f"→ {len(playbooks)} CACAO playbooks"
         )
         return PathResult(
             playbooks=playbooks,
             source="llm_attribution",
             confidence=conf,
-            technique_ids=attributed_ids,
-            technique_names=attributed_names,
-            tactics=enriched.tactics,
+            technique_ids=selected,
+            technique_names=[technique_name(t) for t in selected],
+            ranked_technique_ids=ranked,
+            tactics=self._tactics_for(ranked[0], enriched.tactics),
             llm_reasoning=reasoning,
         )
 
-    # Loaded once at class level; safe because the file is read-only at runtime.
-    _MITRE_NAMES: Dict[str, str] = {}
+    # -----------------------------------------------------------------------
+    # Technique → playbooks
+    # -----------------------------------------------------------------------
+    def _playbooks_for(
+        self, ranked: List[str], iocs: Dict, raw: Dict, k: int
+    ) -> Tuple[List[str], List[Dict]]:
+        """Walk the ranking in order, collecting templates until k playbooks are found.
 
-    @classmethod
-    def _load_mitre_names(cls) -> None:
-        if cls._MITRE_NAMES:
-            return
-        import json, os
-        path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "mitre_techniques.json")
-        path = os.path.normpath(path)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                cls._MITRE_NAMES = json.load(f)
+        Returns (technique ids that actually contributed, parameterized playbooks).
+        """
+        seen: set = set()
+        selected: List[str] = []
+        playbooks: List[Dict] = []
 
+        for tid in ranked:
+            if len(playbooks) >= k:
+                break
+            hit = False
+            for template in self._library.get_for_technique(tid):
+                if template["id"] not in seen:
+                    seen.add(template["id"])
+                    playbooks.append(
+                        self._parameterizer.parameterize(template, iocs, raw).to_dict()
+                    )
+                    hit = True
+            if hit:
+                selected.append(tid)
+
+        if playbooks:
+            return selected, playbooks[:k]
+
+        fallback_pairs: List[Tuple[str, str]] = []
+        for tid in ranked:
+            target = _TECHNIQUE_FALLBACK.get(tid) or _TECHNIQUE_FALLBACK.get(tid.split(".")[0])
+            if target and target not in {t for _, t in fallback_pairs}:
+                fallback_pairs.append((tid, target))
+
+        for tid, target in fallback_pairs:
+            if len(playbooks) >= k:
+                break
+            for template in self._library.get_for_technique(target):
+                if template["id"] not in seen:
+                    seen.add(template["id"])
+                    playbooks.append(
+                        self._parameterizer.parameterize(template, iocs, raw).to_dict()
+                    )
+                    if tid not in selected:
+                        selected.append(tid)
+
+        if playbooks:
+            logger.info(
+                f"[Path B] No templates for {ranked}; fell back to "
+                f"{[t for _, t in fallback_pairs]} → {len(playbooks)} playbook(s)"
+            )
+        return selected, playbooks[:k]
+
+    def _tactics_for(self, top_technique: str, enriched_tactics: List[str]) -> List[str]:
+        """Tactics for the top-1 attribution, unioned with any the alert already carried.
+
+        Path B runs precisely when the alert has NO MITRE tags, so enriched.tactics is
+        usually empty — without deriving tactics from the attribution, the decision
+        engine's tactic-agreement check between Path B and a tactic-predicting Path C
+        model can never fire.
+        """
+        _, tactics_by_id, _ = load_vocab("all")
+        derived = tactics_by_id.get(top_technique) or tactics_by_id.get(
+            top_technique.split(".")[0]
+        ) or []
+        merged = list(enriched_tactics)
+        for t in derived:
+            if t not in merged:
+                merged.append(t)
+        return merged
+
+    # -----------------------------------------------------------------------
+    # LLM call
+    # -----------------------------------------------------------------------
     def _attribute_technique(self, alert_text: str) -> Optional[Dict]:
-        self._library.load()  # ensure index is populated before reading _by_technique
-        self._load_mitre_names()
-        covered_ids = sorted({tid.split(".")[0] for tid in self._library._by_technique})
-        covered_str = "\n".join(
-            f"  {tid}: {self._MITRE_NAMES.get(tid, tid)}"
-            for tid in covered_ids
-        )
-        prompt = (
-            "You are a cybersecurity analyst. Analyze the security alert below and "
-            "identify the most likely MITRE ATT&CK technique(s).\n\n"
-            f"Alert:\n{alert_text}\n\n"
-            "Supported techniques (you MUST pick only from this list):\n"
-            f"{covered_str}\n\n"
-            "Respond with a JSON object ONLY (no markdown fences, no commentary):\n"
-            '{"technique_ids": ["T1110.001"], "technique_names": ["Brute Force: Password Guessing"], '
-            '"confidence": 0.92, "reasoning": "Multiple failed SSH logins from a single IP"}\n\n'
-            "Rules:\n"
-            "- Select the technique ID(s) from the supported list above that best match the alert\n"
-            "- Sub-techniques (TXXXX.XXX) are allowed if the parent is in the list\n"
-            "- confidence is 0.0–1.0; be honest — below 0.5 means uncertain\n"
-            "- Return at most 3 technique IDs, most likely first\n"
-        )
-        raw = call_llm(prompt, max_tokens=512)
-        return json.loads(strip_fences(raw))
+        """Return {ranked, confidence, reasoning} or None if nothing usable came back."""
+        vocab  = vocab_string(config.llm.attribution_vocab)
+        prompt = build_prompt(vocab, alert_text, ask_confidence=True)
+        spec   = attribution_spec()
+        self._warn_if_context_too_small(prompt, spec)
+
+        resp = call_model(spec, prompt)
+        pred = parse_prediction(resp.text, resp.reasoning)
+
+        if resp.finish == "length":
+            logger.warning(
+                f"[Path B] {spec['model']} hit its output cap "
+                f"({output_budget(spec)} tokens) — raise LLM_ATTRIBUTION_MAX_TOKENS "
+                f"(thinking models need ~16384, plus LLM_NUM_CTX=32768)"
+            )
+        if pred["from_reasoning"]:
+            logger.warning(
+                f"[Path B] {spec['model']} returned an empty answer channel; ranking "
+                f"recovered from its reasoning text — treat this attribution as weak"
+            )
+
+        valid   = in_vocab(pred["ranked"])
+        dropped = [t for t in pred["ranked"] if t not in set(valid)]
+        ranked  = valid[: config.llm.attribution_ranked_k]
+        if dropped:
+            # The model recalled ATT&CK ids from its weights instead of selecting from
+            # the candidate list; those ids cannot be looked up and must not be reported.
+            logger.warning(
+                f"[Path B] {spec['model']} returned {len(dropped)} id(s) outside "
+                f"ATT&CK v19.1: {dropped}"
+            )
+        if not ranked:
+            logger.info(f"[Path B] no in-vocabulary technique in response: {resp.text[:200]!r}")
+            return None
+
+        conf = pred["confidence"]
+        if conf is None:
+            conf = self._derive_confidence(pred)
+            logger.info(
+                f"[Path B] {spec['model']} omitted \"confidence\"; derived {conf:.2f} "
+                f"from parse quality"
+            )
+
+        return {"ranked": ranked, "confidence": conf, "reasoning": pred["reasoning"]}
+
+    @staticmethod
+    def _derive_confidence(pred: Dict) -> float:
+        if pred["from_reasoning"]:
+            return _DERIVED_CONFIDENCE["salvaged"]
+        if not pred["json_valid"]:
+            return _DERIVED_CONFIDENCE["regex"]
+        if len(pred["ranked"]) >= config.llm.attribution_ranked_k:
+            return _DERIVED_CONFIDENCE["clean_full"]
+        return _DERIVED_CONFIDENCE["clean_partial"]
+
+    def _warn_if_context_too_small(self, prompt: str, spec: Dict) -> None:
+        """Ollama drops the FRONT of an over-long prompt (the vocabulary) without error.
+
+        Same guard the evaluator prints at startup; logged once per recommender.
+        """
+        if spec["provider"] != "ollama" or self._ctx_warned:
+            return
+        approx_tok = int(len(prompt) / 2.5)
+        budget = approx_tok + spec.get("max_tokens", 0)
+        if budget > spec["num_ctx"]:
+            self._ctx_warned = True
+            logger.warning(
+                f"[Path B] prompt+output (~{approx_tok}+{spec.get('max_tokens')}) exceeds "
+                f"num_ctx={spec['num_ctx']} for {spec['model']} — Ollama will silently "
+                f"drop the front of the prompt (the candidate vocabulary) and accuracy "
+                f"will collapse. Raise LLM_NUM_CTX or set "
+                f"LLM_ATTRIBUTION_VOCAB=parents."
+            )

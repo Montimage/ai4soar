@@ -23,6 +23,8 @@ class OrchestrationResult:
     paths_used      : e.g. ["A"], ["B", "C"], ["D"]
     technique_ids   : attributed ATT&CK technique IDs (may be empty)
     technique_names : human-readable technique names
+    ranked_technique_ids : Path B's full ranked top-k, including candidates that had
+                      no playbook — the model's alternatives, for analyst review
     tactics         : attributed ATT&CK tactics
     llm_reasoning   : free-text explanation from LLM (Path B only)
     cacao_playbook  : full CACAO 2.0 dict when Path D was used (else None)
@@ -35,6 +37,7 @@ class OrchestrationResult:
     paths_used:       List[str]
     technique_ids:    List[str]  = field(default_factory=list)
     technique_names:  List[str]  = field(default_factory=list)
+    ranked_technique_ids: List[str] = field(default_factory=list)
     tactics:          List[str]  = field(default_factory=list)
     llm_reasoning:    str        = ""
     cacao_playbook:   Optional[Dict] = None
@@ -69,6 +72,7 @@ class OrchestrationResult:
             "paths_used":             self.paths_used,
             "technique_ids":          self.technique_ids,
             "technique_names":        self.technique_names,
+            "ranked_technique_ids":   self.ranked_technique_ids,
             "tactics":                self.tactics,
             "llm_reasoning":          self.llm_reasoning,
             "auto_executable":        self.auto_executable,

@@ -247,7 +247,15 @@ class LLMConfig:
     ollama_model: str = "llama3.1"                        # Ollama model tag
     technique_confidence_threshold: float = 0.70          # min confidence for Path B to proceed
     max_tokens: int = 1024
-    timeout: float = 30.0
+    timeout: float = 180.0
+    # --- attribution (Path B) ------------------------------------------------
+    num_ctx: int = 16384                                  # Ollama context window
+    reasoning_effort: str = "medium"                      # gpt-5* / o-series only
+    attribution_vocab: str = "all"                        # "all" (697) | "parents" (222)
+    attribution_max_tokens: int = 512                     # 5 ranked ids + short reasoning
+    attribution_ranked_k: int = 5                         # ranked ids consulted for playbooks
+    num_ctx_pinned: bool = False
+    attribution_max_tokens_pinned: bool = False
 
     def __post_init__(self):
         self.provider = os.getenv("LLM_PROVIDER", self.provider)
@@ -262,6 +270,17 @@ class LLMConfig:
             os.getenv("LLM_CONFIDENCE_THRESHOLD", str(self.technique_confidence_threshold))
         )
         self.timeout = float(os.getenv("LLM_TIMEOUT", str(self.timeout)))
+        self.num_ctx_pinned = "LLM_NUM_CTX" in os.environ
+        self.num_ctx = int(os.getenv("LLM_NUM_CTX", str(self.num_ctx)))
+        self.reasoning_effort = os.getenv("LLM_REASONING_EFFORT", self.reasoning_effort)
+        self.attribution_vocab = os.getenv("LLM_ATTRIBUTION_VOCAB", self.attribution_vocab)
+        self.attribution_max_tokens_pinned = "LLM_ATTRIBUTION_MAX_TOKENS" in os.environ
+        self.attribution_max_tokens = int(
+            os.getenv("LLM_ATTRIBUTION_MAX_TOKENS", str(self.attribution_max_tokens))
+        )
+        self.attribution_ranked_k = int(
+            os.getenv("LLM_ATTRIBUTION_RANKED_K", str(self.attribution_ranked_k))
+        )
 
 
 @dataclass

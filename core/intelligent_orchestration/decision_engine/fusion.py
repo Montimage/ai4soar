@@ -46,6 +46,7 @@ class FusedResult:
     paths_used: List[str]           # subset of ["B", "C"]
     technique_ids: List[str]        = field(default_factory=list)
     technique_names: List[str]      = field(default_factory=list)
+    ranked_technique_ids: List[str] = field(default_factory=list)  # Path B full top-k
     tactics: List[str]              = field(default_factory=list)
     predicted_tactic: str           = ""
     llm_reasoning: str              = ""
@@ -133,6 +134,7 @@ def _fuse_b_primary(b: PathResult, c: Optional[PathResult]) -> FusedResult:
         paths_used=paths,
         technique_ids=b.technique_ids,
         technique_names=b.technique_names,
+        ranked_technique_ids=b.ranked_technique_ids,
         tactics=b.tactics,
         llm_reasoning=b.llm_reasoning,
     )

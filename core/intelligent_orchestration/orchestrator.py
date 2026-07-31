@@ -107,6 +107,7 @@ class PlaybookOrchestrator:
                 paths_used=fused.paths_used,
                 technique_ids=fused.technique_ids,
                 technique_names=fused.technique_names,
+                ranked_technique_ids=fused.ranked_technique_ids,
                 tactics=fused.tactics,
                 llm_reasoning=fused.llm_reasoning,
             )
@@ -140,6 +141,7 @@ class PlaybookOrchestrator:
             paths_used=paths,
             technique_ids=pr.technique_ids,
             technique_names=pr.technique_names,
+            ranked_technique_ids=pr.ranked_technique_ids,
             tactics=pr.tactics,
             llm_reasoning=pr.llm_reasoning,
             cacao_playbook=pr.cacao_playbook,

@@ -22,6 +22,8 @@ class PathResult:
 
     technique_ids: List[str]        = field(default_factory=list)
     technique_names: List[str]      = field(default_factory=list)
+    # Path B only: the model's full ranked top-k attribution, including candidates that had no playbook.
+    ranked_technique_ids: List[str] = field(default_factory=list)
     tactics: List[str]              = field(default_factory=list)
     predicted_tactic: str           = ""
     llm_reasoning: str              = ""
