@@ -31,3 +31,4 @@ requests==2.31.0
 
 # YAML parsing (CACAO playbook templates)
 pyyaml>=6.0
+jsonschema>=3.2.0
