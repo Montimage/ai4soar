@@ -21,9 +21,6 @@ a workflow shape against our guarantee that the output is spec-compliant.
               The model still decides which steps exist and how they connect.
   skeleton  — a fixed 5-step scaffold with UUIDs pre-assigned; the model fills in
               names, descriptions and commands only.
-
-IMPORTANT — prompt stability: the evaluator caches responses under a hash of the
-rendered prompt, so editing a template invalidates cached runs for that mode.
 """
 
 import json
@@ -59,11 +56,12 @@ def build_skeleton(seed: Optional[str] = None) -> Dict:
         now = _EPOCH
         mk  = lambda role: uuid.uuid5(_NS, f"{seed}|{role}")
 
-    s_invest  = f"step--{mk('investigate')}"
-    s_contain = f"step--{mk('contain')}"
-    s_recover = f"step--{mk('recover')}"
-    s_report  = f"step--{mk('document')}"
-    s_end     = f"step--{mk('end')}"
+    s_invest  = f"action--{mk('investigate')}"
+    s_contain = f"action--{mk('contain')}"
+    s_recover = f"action--{mk('recover')}"
+    s_report  = f"action--{mk('document')}"
+    s_end     = f"end--{mk('end')}"
+    agent     = f"individual--{mk('agent')}"
     return {
         "type":           "playbook",
         "spec_version":   "cacao-2.0",
@@ -73,34 +71,35 @@ def build_skeleton(seed: Optional[str] = None) -> Dict:
         "playbook_types": ["notification", "investigation", "remediation"],
         "external_references": [{
             "source":      "mitre-attack",
-            "external_id": "<fill: MITRE ATT&CK technique id, e.g. T1110>",
-            "name":        "<fill: technique name>",
+            "external_id": "<fill: the MITRE ATT&CK technique id for this alert>",
+            "name":        "<fill: that technique's name>",
         }],
         "created_by":     AI4SOAR_IDENTITY,
         "created":        now,
         "modified":       now,
+        "agent_definitions": {agent: {"type": "individual", "name": "SOC analyst"}},
         "workflow_start": s_invest,
         "workflow": {
             s_invest: {
-                "type": "action", "name": "Investigate",
+                "type": "action", "name": "Investigate", "agent": agent,
                 "description": "<fill: what evidence to gather>",
                 "commands": [{"type": "bash", "command": "<fill: investigation command>"}],
                 "on_completion": s_contain,
             },
             s_contain: {
-                "type": "action", "name": "Contain",
+                "type": "action", "name": "Contain", "agent": agent,
                 "description": "<fill: how to isolate or block the threat>",
                 "commands": [{"type": "bash", "command": "<fill: containment command>"}],
                 "on_completion": s_recover,
             },
             s_recover: {
-                "type": "action", "name": "Recover",
+                "type": "action", "name": "Recover", "agent": agent,
                 "description": "<fill: how to restore normal operations>",
                 "commands": [{"type": "bash", "command": "<fill: recovery command>"}],
                 "on_completion": s_report,
             },
             s_report: {
-                "type": "action", "name": "Document",
+                "type": "action", "name": "Document", "agent": agent,
                 "description": "<fill: what to record about this incident>",
                 "commands": [{"type": "bash", "command": "<fill: documentation command>"}],
                 "on_completion": s_end,
@@ -127,27 +126,47 @@ CACAO 2.0 requirements (OASIS Security Playbooks v2.0):
 - Required top-level properties: "type" (always "playbook"), "spec_version" (always
   "cacao-2.0"), "id", "name", "created_by", "created", "modified", "workflow_start",
   "workflow". Add "description" and "playbook_types" as well.
-- "id" MUST be "playbook--<UUID4>", e.g. "playbook--8f7e6d5c-4b3a-4291-8d7e-6f5a4b3c2d1e".
-- "created_by" MUST be a STIX identity reference, "identity--<UUID4>".
+- Every identifier has the form "<object-type>--<UUID>", where <object-type> is the exact
+  "type" value of the object being identified and <UUID> is a REAL random RFC 4122
+  version-4 UUID: lowercase hex in 8-4-4-4-12 groups whose 13th hex digit is "4" and whose
+  17th is one of 8, 9, a or b. Decorative or sequential hex is NOT a UUID and is rejected.
+  Generate a fresh UUID for each identifier, and never reuse one that appears in this
+  prompt.
+- "id" is "playbook--<UUIDv4>"; "created_by" is an identity reference,
+  "identity--<UUIDv4>".
 - "created" and "modified" are UTC timestamps, e.g. "2026-01-31T12:00:00Z".
-- "workflow" is an object keyed by step id. Step ids MUST be "step--<UUID4>".
+- "workflow" is an object keyed by step id, and a step id MUST use that step's own "type"
+  as its prefix: an "action" step is keyed "action--<UUIDv4>", a "start" step
+  "start--<UUIDv4>", an "end" step "end--<UUIDv4>", and likewise for "if-condition",
+  "while-condition", "parallel", "playbook-action" and "switch-condition". "step--" is a
+  CACAO 1.1 form and is NOT valid in 2.0.
 - "workflow_start" MUST be the id of a step that exists in "workflow".
 - Each step's "type" MUST be one of: "start", "end", "action", "playbook-action",
   "parallel", "if-condition", "while-condition", "switch-condition". Use "action" for a
   step that runs commands — "single" is CACAO 1.1 and is NOT valid in 2.0.
-- Every "action" step has "name", "description", and a non-empty "commands" array of
-  {"type": "bash", "command": "<the command>"} objects.
+- Every "action" step has "name", "description", a non-empty "commands" array of
+  {"type": "bash", "command": "<the command>"} objects, AND "agent" — the identifier of
+  the executor that runs those commands.
+- Each non-"action" step type carries its own required properties, so use a type only if
+  you supply them: "if-condition" and "while-condition" need "condition" plus "on_true"
+  (and may add "on_false"); "parallel" needs "next_steps", an array of step ids;
+  "switch-condition" needs "switch" plus "cases"; "playbook-action" needs "playbook_id".
+  "start" and "end" steps need nothing beyond their linking property.
+- Declare every agent referenced by an "agent" property in a top-level
+  "agent_definitions" object, keyed by that same identifier: a key of the form
+  "individual--<UUIDv4>" whose value is {"type": "individual", "name": "<the executor>"}.
 - Steps link forward with "on_completion" (or "on_success"/"on_failure"), whose value
   MUST be the id of another step in "workflow".
 - There MUST be at least one step with "type": "end", reachable from "workflow_start".
 """
 
 _ATTACK_RULE = """
-- Record the MITRE ATT&CK technique this playbook responds to in "external_references":
-  "external_references": [{"source": "mitre-attack", "external_id": "T1110",
-                           "name": "Brute Force"}]
-  Give the single most likely technique id. This is a declaration of what you are
-  responding to, not a request to enumerate options.
+- Record the MITRE ATT&CK technique this playbook responds to as a single
+  "external_references" entry of the form
+  {"source": "mitre-attack", "external_id": "<the technique id you determined>",
+   "name": "<that technique's name>"}
+  Give the single most likely technique for THIS alert. This is a declaration of what you
+  are responding to, not a request to enumerate options.
 """
 
 _CONTENT_RULES = """

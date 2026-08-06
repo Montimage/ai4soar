@@ -104,25 +104,33 @@ def cacao_conformance(pb: Dict) -> Dict:
 
 # Official CACAO 2.0 schema validation
 SCHEMA_DIR = os.path.join(ROOT, "data", "cacao-schemas")
+_SCHEMA_DRAFT = "2020-12"
 
 
 @functools.lru_cache(maxsize=1)
 def _schema_validator():
-    """Draft-7 validator for playbook.json with all 51 $ref'd schemas preloaded.
+    """Draft 2020-12 validator for playbook.json with all 51 $ref'd schemas preregistered.
 
-    Returns None (rather than raising) if jsonschema or the vendored schemas are absent,
-    so the evaluator degrades to our own checks instead of failing the whole run.
+    Returns None (rather than raising) if the vendored schemas or a new enough jsonschema
+    are absent, so the evaluator degrades to our own checks instead of failing the run.
+    Callers MUST surface `schema_available` when it is False: a missing validator makes
+    `schema_valid` None, which any percentage aggregation silently counts as a failure.
     """
-    try:
-        from jsonschema import Draft7Validator, RefResolver
-    except ImportError:
-        return None
     entry = os.path.join(SCHEMA_DIR, "playbook.json")
     if not os.path.exists(entry):
         return None
+    try:
+        from jsonschema import Draft202012Validator
+        from referencing import Registry, Resource
+        from referencing.jsonschema import DRAFT202012
+    except ImportError:
+        sys.stderr.write(
+            "WARNING official CACAO schema validation is DISABLED: it needs "
+            "jsonschema>=4.18 and referencing.\n")
+        return None
     with open(entry, encoding="utf-8") as f:
         schema = json.load(f)
-    store = {}
+    resources = []
     for path in glob.glob(os.path.join(SCHEMA_DIR, "**", "*.json"), recursive=True):
         try:
             with open(path, encoding="utf-8") as f:
@@ -130,10 +138,10 @@ def _schema_validator():
         except Exception:
             continue
         if isinstance(sub, dict) and "$id" in sub:
-            store[sub["$id"]] = sub
-    resolver = RefResolver(base_uri=schema.get("$id", "file://" + SCHEMA_DIR + "/"),
-                           referrer=schema, store=store)
-    return Draft7Validator(schema, resolver=resolver)
+            resources.append((sub["$id"],
+                              Resource(contents=sub, specification=DRAFT202012)))
+    registry = Registry().with_resources(resources)
+    return Draft202012Validator(schema, registry=registry)
 
 
 def cacao_schema_check(pb: Dict) -> Dict:
@@ -141,19 +149,20 @@ def cacao_schema_check(pb: Dict) -> Dict:
     v = _schema_validator()
     if v is None:
         return {"schema_valid": None, "n_schema_errors": None, "schema_errors": [],
-                "schema_available": False}
+                "schema_available": False, "schema_draft": None}
     try:
         errs = sorted(v.iter_errors(pb), key=lambda e: list(e.path))
     except Exception as exc:
         return {"schema_valid": False, "n_schema_errors": None,
                 "schema_errors": [f"validator error: {type(exc).__name__}: {exc}"],
-                "schema_available": True}
+                "schema_available": True, "schema_draft": _SCHEMA_DRAFT}
     return {
         "schema_valid":     not errs,
         "n_schema_errors":  len(errs),
         "schema_errors":    [f"{'/'.join(str(p) for p in e.path) or '(root)'}: {e.message[:120]}"
                              for e in errs[:8]],
         "schema_available": True,
+        "schema_draft":     _SCHEMA_DRAFT,
     }
 
 
