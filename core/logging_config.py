@@ -35,17 +35,24 @@ def setup_logging(log_level=logging.INFO, log_file='ai4soar.log'):
     root_logger.handlers = []
     
     # Console handler
+    # Windows consoles default sys.stdout to the system codepage (cp1252),
+    # which can't encode characters like the arrows used in several log
+    # messages (e.g. "[Path A] ['T1557'] -> 0 CACAO playbooks") and crashes
+    # the handler with a UnicodeEncodeError on every such line. Force UTF-8.
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
-    
+
     # File handler with rotation
     if log_file:
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
+            backupCount=5,
+            encoding='utf-8'
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
