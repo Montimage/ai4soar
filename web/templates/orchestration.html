@@ -3,7 +3,11 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0 fw-bold"><i class="bi bi-cpu text-primary me-2"></i>AI Orchestration</h4>
+  <div>
+    <h4 class="mb-0 fw-bold"><i class="bi bi-cpu text-primary me-2"></i>AI Orchestration</h4>
+    <small class="text-muted">3-stage recommendation engine (STIX lookup, LLM technique
+      attribution + ML similarity, then CACAO 2.0 generation as a safety net)</small>
+  </div>
   <a href="/ui/alerts" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left me-1"></i>Back to Alerts
   </a>

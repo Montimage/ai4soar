@@ -265,10 +265,14 @@ def _anthropic(spec: Dict, prompt: str) -> LLMResponse:
         kwargs_client["timeout"] = spec["timeout"]
     client = anthropic.Anthropic(**kwargs_client)
     t0 = time.time()
-    # NOTE: current Anthropic models reject temperature/top_p -> omit them.
-    resp = client.messages.create(model=spec["model"],
-                                  max_tokens=spec.get("max_tokens", DEFAULT_MAX_TOKENS),
-                                  messages=[{"role": "user", "content": prompt}])
+    max_tok = spec.get("max_tokens", DEFAULT_MAX_TOKENS)
+    kwargs = {"model": spec["model"], "max_tokens": max_tok,
+              "messages": [{"role": "user", "content": prompt}]}
+    if max_tok > 8192:
+        with client.messages.stream(**kwargs) as s:
+            resp = s.get_final_message()
+    else:
+        resp = client.messages.create(**kwargs)
     dt = time.time() - t0
     txt = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
     think = "".join(getattr(b, "thinking", "") for b in resp.content

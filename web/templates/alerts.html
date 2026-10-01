@@ -3,7 +3,11 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0 fw-bold">Alert Management</h4>
+  <div>
+    <h4 class="mb-0 fw-bold">Alert Management</h4>
+    <small class="text-muted">Historical Wazuh alerts, the labelled MMT / Suricata / Snort
+      benchmark, and live NATS / Kafka streams</small>
+  </div>
 </div>
 
 <!-- Source tabs -->
@@ -71,7 +75,7 @@
             <th style="width:74px">Severity</th>
             <th style="width:62px">Source</th>
             <th style="max-width:180px">Description</th>
-            <th style="width:90px">T-codes</th>
+            <th style="width:90px">Techniques</th>
             <th style="width:108px">Src IP</th>
             <th style="width:108px">Dst IP</th>
             <th style="width:32px"></th>
@@ -118,7 +122,7 @@
             <th style="width:74px">Severity</th>
             <th style="width:62px">Source</th>
             <th style="max-width:180px">Description</th>
-            <th style="width:90px">T-codes</th>
+            <th style="width:90px">Techniques</th>
             <th style="width:108px">Host</th>
             <th style="width:32px"></th>
           </tr>
@@ -221,7 +225,7 @@
             <th class="sort-col" data-col="tactic"    style="width:110px">
               Tactic <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
             </th>
-            <th style="width:104px" id="hist-tcode-th">T-codes</th>
+            <th style="width:112px" id="hist-tcode-th">Techniques</th>
             <th style="width:32px" id="hist-action-th"></th>
           </tr>
         </thead>
@@ -409,7 +413,7 @@ function switchHistSource() {
   document.getElementById('bench-mode').classList.toggle('d-none', !bench);
   document.getElementById('hist-tactic').classList.toggle('d-none', bench);
   document.getElementById('hist-limit').classList.toggle('d-none', bench);
-  document.getElementById('hist-tcode-th').textContent = bench ? 'Expected' : 'T-codes';
+  document.getElementById('hist-tcode-th').textContent = bench ? 'Expected' : 'Techniques';
   document.getElementById('hist-search').placeholder = bench
     ? 'Signature, T-code, tactic…'
     : 'Search description, host, tactic…';
@@ -645,7 +649,7 @@ function renderHistTable(alerts) {
 
     /* Benchmark rows carry a human label under _benchmark.ground_truth. They have no
        MITRE tags of their own (by design — that is what sends them to Path B), so the
-       T-codes column shows what the orchestrator is EXPECTED to find, styled apart from
+       Techniques column shows what the orchestrator is EXPECTED to find, styled apart from
        a real tag so the two are never read as the same thing. */
     const bench = alert._benchmark;
     const gt    = bench ? (bench.ground_truth || {}) : null;
