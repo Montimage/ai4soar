@@ -1,0 +1,73 @@
+id: pb-t1557-arp-poisoning
+name: "Respond to ARP Poisoning / IP Conflict"
+version: "1.0"
+techniques:
+  - T1557
+  - T1557.002
+tactics:
+  - credential-access
+description: "Capture the conflicting ARP frames, flush the disputed IP's ARP cache entry, and open an incident ticket for manual MAC verification — never auto-blocks, since an ARP conflict alert names a disputed IP claimed by two MACs and cannot tell which one is the attacker."
+
+parameters:
+  disputed_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "The IP address whose ARP binding is in conflict — NOT a confirmed attacker IP, see description"
+  hostname:
+    type: string
+    required: false
+    sources:
+      - _source.agent.name
+      - agent.name
+    description: "Sensor/host that observed the conflicting ARP frames"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: "playbook--8b6e2d5b-6a3d-4c8a-9c8e-2b6c0f4a7a3f"
+  name: "Investigate ARP Conflict on {{disputed_ip}}"
+  description: "Capture evidence for {{disputed_ip}}, flush its ARP cache entry, and flag both claimed MACs for manual verification"
+  playbook_types:
+    - investigation
+    - notification
+  workflow_start: "step--capture-evidence"
+  workflow:
+
+    # Step 1 — Capture the conflicting ARP traffic before it ages out of any
+    # local capture buffer; this is the only place the two competing MAC
+    # addresses are still visible together.
+    step--capture-evidence:
+      type: action
+      name: "Capture ARP traffic for {{disputed_ip}}"
+      commands:
+        - type: bash
+          command: "timeout 10 tcpdump -i any -c 50 'arp and host {{disputed_ip}}' -w /tmp/arp_evidence_{{disputed_ip}}_$(date +%s).pcap"
+      on_success: "step--flush-cache"
+      on_failure: "step--flush-cache"
+      on_completion: "step--flush-cache"
+    step--flush-cache:
+      type: action
+      name: "Flush stale ARP cache entry for {{disputed_ip}}"
+      commands:
+        - type: bash
+          # Non-destructive: forces re-resolution rather than blocking
+          # either candidate MAC outright, since guessing wrong would
+          # disconnect the legitimate host.
+          command: "arp -d {{disputed_ip}} 2>/dev/null || true"
+      on_completion: "step--notify"
+    step--notify:
+      type: action
+      name: "Create investigation ticket for manual MAC verification"
+      commands:
+        - type: http-api
+          command: "POST /api/v1/incidents"
+          headers:
+            Content-Type: "application/json"
+          body: '{"title":"ARP conflict on {{disputed_ip}}","severity":"medium","host":"{{hostname}}","disputed_ip":"{{disputed_ip}}","technique":"T1557","action_required":"verify_mac_ownership_manually"}'
+      on_completion: "step--end"
+    step--end:
+      type: end
