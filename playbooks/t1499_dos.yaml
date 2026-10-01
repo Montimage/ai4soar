@@ -2,6 +2,9 @@ id: pb-t1499-block-dos-source
 name: "Block Denial-of-Service Source"
 version: "1.0"
 techniques:
+  - T1498
+  - T1498.001
+  - T1498.002
   - T1499
   - T1499.001
   - T1499.002
