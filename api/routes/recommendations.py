@@ -11,11 +11,15 @@ from api.routes import recommendations_bp
 from core.config import config
 from core.intelligent_orchestration.enrichment.pipeline import EnrichmentPipeline
 from core.intelligent_orchestration.orchestrator import PlaybookOrchestrator
+from core.intelligent_orchestration.stix_knowledge_base import STIXKnowledgeBase
+from core.playbook_library.loader import PlaybookLibrary
 
 logger = logging.getLogger(__name__)
 
 _pipeline     = EnrichmentPipeline()
 _orchestrator = PlaybookOrchestrator()
+_kb           = STIXKnowledgeBase(config.stix.data_path)
+_library      = PlaybookLibrary(config.playbook_library.path)
 
 
 @recommendations_bp.route('/recommend', methods=['POST'])
@@ -84,19 +88,21 @@ def recommend_playbooks():
 @recommendations_bp.route('/mitre/technique/<technique_id>/playbooks', methods=['GET'])
 def get_playbooks_for_technique(technique_id: str):
     """
-    Return all STIX mitigations for a MITRE technique ID.
+    Return all library playbooks that cover a MITRE technique ID.
 
     Example: GET /api/mitre/technique/T1110.001/playbooks
     """
     try:
-        kb        = _orchestrator._kb
-        playbooks = kb.get_playbooks_for_technique(technique_id)
-        technique = kb.get_technique_info(technique_id)
+        templates = _library.get_for_technique(technique_id)
+        technique = _kb.get_technique_info(technique_id)
         return jsonify({
             "technique_id":   technique_id,
             "technique_name": technique["name"] if technique else None,
-            "playbook_count": len(playbooks),
-            "playbooks":      playbooks,
+            "playbook_count": len(templates),
+            "playbooks": [
+                {"id": t["id"], "name": t.get("name", t["id"]), "techniques": t.get("techniques", [])}
+                for t in templates
+            ],
         }), 200
     except Exception as e:
         logger.error(f"Error fetching playbooks for technique {technique_id}: {e}")
@@ -106,28 +112,26 @@ def get_playbooks_for_technique(technique_id: str):
 @recommendations_bp.route('/mitre/techniques', methods=['GET'])
 def list_techniques_with_playbooks():
     """
-    List all MITRE techniques that have at least one mitigation.
+    List all MITRE techniques that have at least one library playbook.
 
     Query params:
         tactic: filter by tactic name (optional), e.g. ?tactic=credential-access
     """
     try:
-        kb = _orchestrator._kb
-        kb.load()
+        _library.load()
         tactic_filter = request.args.get("tactic", "").lower()
 
         results = []
-        for tech_id, mitigations in kb._tech_to_mitigations.items():
-            tech = kb.get_technique_info(tech_id)
-            if not tech:
-                continue
-            if tactic_filter and tactic_filter not in [t.lower() for t in tech["tactics"]]:
+        for tech_id, templates in _library._by_technique.items():
+            technique = _kb.get_technique_info(tech_id)
+            tactics = technique["tactics"] if technique else []
+            if tactic_filter and tactic_filter not in [t.lower() for t in tactics]:
                 continue
             results.append({
                 "technique_id":   tech_id,
-                "technique_name": tech["name"],
-                "tactics":        tech["tactics"],
-                "playbook_count": len(mitigations),
+                "technique_name": technique["name"] if technique else tech_id,
+                "tactics":        tactics,
+                "playbook_count": len(templates),
             })
 
         results.sort(key=lambda x: x["technique_id"])
@@ -140,9 +144,10 @@ def list_techniques_with_playbooks():
 
 @recommendations_bp.route('/mitre/kb/stats', methods=['GET'])
 def kb_stats():
-    """Return statistics about the loaded STIX knowledge base."""
+    """Return statistics about the loaded STIX knowledge base and playbook library."""
     try:
-        stats = _orchestrator._kb.stats()
+        stats = _kb.stats()
+        stats.update(_library.stats())
         return jsonify(stats), 200
     except Exception as e:
         logger.error(f"Error fetching KB stats: {e}")
@@ -161,6 +166,8 @@ def describe_paths():
         "lr":      config.model.lr_path,
         "ovr_lr":  config.model.ovr_lr_path,
         "ovr_svm": config.model.ovr_svm_path,
+        "rf":      config.model.rf_path,
+        "mlp":     config.model.mlp_path,
         "xgb":     config.model.xgb_path,
     }.get(config.model.active_model, config.model.knn_path)
     ml_ready = (
