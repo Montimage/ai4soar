@@ -56,8 +56,14 @@ cacao:
     - prevention
     - remediation
     - notification
-  workflow_start: "step--block-ip"
+  workflow_start: "step--start"
   workflow:
+
+    # CACAO 2.0 requires every playbook to contain a start step, and
+    # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
+    step--start:
+      type: start
+      on_completion: "step--block-ip"
 
     # Step 1 — Drop attacker IP and schedule auto-expiry
     step--block-ip:

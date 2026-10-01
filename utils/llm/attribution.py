@@ -27,9 +27,14 @@ ROOT      = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 VOCAB_ALL = os.path.join(ROOT, "data", "attack_enterprise_all.json")
 VOCAB_PAR = os.path.join(ROOT, "data", "attack_enterprise_parents.json")
 
-# Number of ranked candidates the model is asked for. The prompt hard-codes five
-# "Txxxx" placeholders, so changing this alone is not enough — keep them in sync.
+# Default number of ranked candidates the model is asked for. Callers may override it
+# per call (production reads LLM_ATTRIBUTION_TOP_K); the prompt's wording, placeholder
+# count and rules are all derived from that number, so the three stay in sync.
 TOP_K = 5
+
+# Rendered into the "identify the N most likely" sentence; beyond this the digit is used.
+_COUNT_WORD = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE",
+               6: "SIX", 7: "SEVEN", 8: "EIGHT", 9: "NINE", 10: "TEN"}
 
 
 # ---------------------------------------------------------------------------
@@ -41,8 +46,8 @@ TOP_K = 5
 # ---------------------------------------------------------------------------
 PROMPT_TEMPLATE = """You are a SOC analyst performing MITRE ATT&CK technique attribution.
 
-Given the security alert below, identify the FIVE most likely MITRE ATT&CK \
-Enterprise techniques, ranked from most likely (rank 1) to least likely (rank 5).
+Given the security alert below, identify the {count_word} most likely MITRE ATT&CK \
+Enterprise techniques, ranked from most likely (rank 1) to least likely (rank {k}).
 
 You MUST choose every technique_id from this list (id: name), and from nowhere else:
 {vocab}
@@ -55,7 +60,7 @@ Respond with a JSON object ONLY (no markdown, no commentary), in this exact SHAP
 {shape}
 
 Rules:
-- Provide EXACTLY 5 technique IDs, ranked most likely first, with no duplicates.
+- Provide EXACTLY {k} technique IDs, ranked most likely first, with no duplicates.
 - The "Txxxx" above are a FORMAT EXAMPLE ONLY — do not reuse them. Choose the real
   IDs from the list above based on what THIS alert actually shows.
 - Every ID MUST be one of the IDs in the list above.
@@ -63,29 +68,38 @@ Rules:
   it), use it; otherwise use the parent technique ID.{extra_rules}
 - Output the JSON and nothing else."""
 
-# Substituted into {shape} as a literal value, so single braces (str.format does not
-# re-scan replacement text).
-_SHAPE = ('{"techniques": ["Txxxx", "Txxxx", "Txxxx", "Txxxx", "Txxxx"], '
-          '"reasoning": "one short sentence"}')
-_SHAPE_CONF = ('{"techniques": ["Txxxx", "Txxxx", "Txxxx", "Txxxx", "Txxxx"], '
-               '"confidence": 0.92, "reasoning": "one short sentence"}')
+# Built as a literal value and substituted into {shape}, so its single braces are safe
+# (str.format does not re-scan replacement text).
+def _shape(top_k: int, ask_confidence: bool) -> str:
+    ids  = ", ".join('"Txxxx"' for _ in range(top_k))
+    conf = '"confidence": 0.92, ' if ask_confidence else ""
+    return '{"techniques": [' + ids + '], ' + conf + '"reasoning": "one short sentence"}'
 
 # Appended only when ask_confidence=True; the leading newline continues the rule list.
 _CONF_RULE = ('\n- "confidence" is how certain you are of the rank-1 ID, from 0.0 to 1.0.'
               '\n  Be honest: below 0.5 means you are guessing.')
 
 
-def build_prompt(vocab: str, alert: str, ask_confidence: bool = False) -> str:
+def build_prompt(vocab: str, alert: str, ask_confidence: bool = False,
+                 top_k: int = TOP_K) -> str:
     """Render the attribution prompt.
 
-    ask_confidence=False reproduces the benchmarked prompt byte-for-byte.
+    ask_confidence=False with top_k=5 reproduces the benchmarked prompt byte-for-byte —
+    the regression test for that is scripts/test_intelligent_orchestration.py.
     ask_confidence=True adds a "confidence" key to the requested JSON shape, which
     production gates on (config.llm.technique_confidence_threshold).
+    top_k changes how many ranked IDs the model is asked for, and therefore the prompt
+    bytes: any value other than 5 invalidates the evaluator's response cache and is no
+    longer the benchmarked prompt.
     """
+    if top_k < 1:
+        raise ValueError(f"top_k must be >= 1, got {top_k}")
     return PROMPT_TEMPLATE.format(
         vocab=vocab,
         alert=alert,
-        shape=_SHAPE_CONF if ask_confidence else _SHAPE,
+        k=top_k,
+        count_word=_COUNT_WORD.get(top_k, str(top_k)),
+        shape=_shape(top_k, ask_confidence),
         extra_rules=_CONF_RULE if ask_confidence else "",
     )
 

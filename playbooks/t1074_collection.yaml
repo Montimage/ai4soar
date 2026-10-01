@@ -51,8 +51,15 @@ cacao:
     - investigation
     - prevention
     - notification
-  workflow_start: "step--isolate-host"
+  workflow_start: "step--start"
   workflow:
+
+    # CACAO 2.0 requires every playbook to contain a start step, and
+    # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
+    step--start:
+      type: start
+      on_completion: "step--isolate-host"
+
     step--isolate-host:
       type: action
       name: "Block outbound data transfer from host"

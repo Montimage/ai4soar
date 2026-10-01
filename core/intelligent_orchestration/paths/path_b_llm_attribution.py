@@ -228,7 +228,8 @@ class PathBRecommender:
     def _attribute_technique(self, alert_text: str) -> Optional[Dict]:
         """Return {ranked, confidence, reasoning} or None if nothing usable came back."""
         vocab  = vocab_string(config.llm.attribution_vocab)
-        prompt = build_prompt(vocab, alert_text, ask_confidence=True)
+        prompt = build_prompt(vocab, alert_text, ask_confidence=True,
+                              top_k=config.llm.attribution_top_k)
         spec   = attribution_spec()
         self._warn_if_context_too_small(prompt, spec)
 

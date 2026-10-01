@@ -133,6 +133,13 @@
 
     <!-- Filter bar -->
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <select class="form-select form-select-sm w-auto" id="hist-source"
+              onchange="switchHistSource()"
+              title="Which alert store to list">
+        <option value="historical" selected>Historical (Wazuh)</option>
+        <option value="benchmark">Benchmark (MMT / Suricata / Snort)</option>
+      </select>
+
       <div class="input-group input-group-sm" style="width:220px">
         <span class="input-group-text text-muted">
           <i class="bi bi-search"></i>
@@ -145,6 +152,30 @@
               id="hist-tactic" onchange="loadHistPage(1)">
         <option value="">All tactics</option>
       </select>
+
+      <!-- Benchmark-only controls -->
+      <select class="form-select form-select-sm w-auto d-none" id="bench-tool"
+              onchange="loadHistPage(1)" title="Which sensor produced the alert">
+        <option value="all" selected>All tools</option>
+        <option value="mmt">MMT</option>
+        <option value="suricata">Suricata</option>
+        <option value="snort">Snort</option>
+      </select>
+      <div class="btn-group btn-group-sm d-none" id="bench-mode" role="group"
+           aria-label="Alert text given to the model">
+        <input type="radio" class="btn-check" name="bench-mode" id="bench-mode-visible"
+               value="visible" checked onchange="loadHistPage(1)">
+        <label class="btn btn-outline-secondary" for="bench-mode-visible"
+               title="Alert text as the sensor emits it, detection signature included">
+          <i class="bi bi-eye me-1"></i>Signature shown
+        </label>
+        <input type="radio" class="btn-check" name="bench-mode" id="bench-mode-stripped"
+               value="stripped" onchange="loadHistPage(1)">
+        <label class="btn btn-outline-secondary" for="bench-mode-stripped"
+               title="Signature removed — the model must attribute from the evidence alone">
+          <i class="bi bi-eye-slash me-1"></i>Stripped
+        </label>
+      </div>
       <select class="form-select form-select-sm w-auto"
               id="hist-limit" onchange="loadHistPage(1)">
         <option value="10" selected>10 / page</option>
@@ -190,8 +221,8 @@
             <th class="sort-col" data-col="tactic"    style="width:110px">
               Tactic <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
             </th>
-            <th style="width:96px">T-codes</th>
-            <th style="width:32px"></th>
+            <th style="width:104px" id="hist-tcode-th">T-codes</th>
+            <th style="width:32px" id="hist-action-th"></th>
           </tr>
         </thead>
         <tbody id="hist-tbody"></tbody>
@@ -360,8 +391,35 @@ function debounceSearch() {
   _searchTimer = setTimeout(() => loadHistPage(1), 380);
 }
 
+/* Which store the table is showing: 'historical' (paged Wazuh) or 'benchmark'
+   (the 37 labelled MMT/Suricata/Snort alerts, returned whole). */
+function histSource() {
+  return document.getElementById('hist-source').value;
+}
+function benchMode() {
+  return document.querySelector('input[name="bench-mode"]:checked')?.value || 'visible';
+}
+
+/* Show the controls that apply to the selected store and hide the ones that don't —
+   tactic/page-size/pagination are meaningless for a 37-row labelled set, and the tool
+   and text-mode filters are meaningless for production alerts. */
+function switchHistSource() {
+  const bench = histSource() === 'benchmark';
+  document.getElementById('bench-tool').classList.toggle('d-none', !bench);
+  document.getElementById('bench-mode').classList.toggle('d-none', !bench);
+  document.getElementById('hist-tactic').classList.toggle('d-none', bench);
+  document.getElementById('hist-limit').classList.toggle('d-none', bench);
+  document.getElementById('hist-tcode-th').textContent = bench ? 'Expected' : 'T-codes';
+  document.getElementById('hist-search').placeholder = bench
+    ? 'Signature, T-code, tactic…'
+    : 'Search description, host, tactic…';
+  if (bench) document.getElementById('hist-pagination').style.display = 'none';
+  loadHistPage(1);
+}
+
 async function loadHistPage(page) {
-  page = Math.max(1, Math.min(page, histState.pages || 1));
+  const bench = histSource() === 'benchmark';
+  page = Math.max(1, Math.min(page, bench ? 1 : (histState.pages || 1)));
   histState.page   = page;
   histState.limit  = parseInt(document.getElementById('hist-limit').value) || 50;
   histState.search = document.getElementById('hist-search').value.trim();
@@ -369,19 +427,32 @@ async function loadHistPage(page) {
 
   setLoading('hist', true);
   try {
-    const qs = new URLSearchParams({
-      page:     histState.page,
-      limit:    histState.limit,
-      sort_by:  histState.sortBy,
-      sort_dir: histState.sortDir,
-      search:   histState.search,
-      tactic:   histState.tactic,
-    });
-    const data = await apiFetch(`/historical_alerts?${qs}`);
-    histAlerts       = data.alerts || [];
-    histState.total  = data.total  || 0;
-    histState.pages  = data.pages  || 1;
-    histState.page   = data.page   || 1;
+    let data;
+    if (bench) {
+      const qs = new URLSearchParams({
+        source_tool: document.getElementById('bench-tool').value,
+        mode:        benchMode(),
+        search:      histState.search,
+      });
+      data = await apiFetch(`/benchmark_alerts?${qs}`);
+      histState.total = data.total || 0;
+      histState.pages = 1;
+      histState.page  = 1;
+    } else {
+      const qs = new URLSearchParams({
+        page:     histState.page,
+        limit:    histState.limit,
+        sort_by:  histState.sortBy,
+        sort_dir: histState.sortDir,
+        search:   histState.search,
+        tactic:   histState.tactic,
+      });
+      data = await apiFetch(`/historical_alerts?${qs}`);
+      histState.total  = data.total  || 0;
+      histState.pages  = data.pages  || 1;
+      histState.page   = data.page   || 1;
+    }
+    histAlerts = data.alerts || [];
     renderHistTable(histAlerts);
     updateHistPager();
   } catch (e) {
@@ -393,6 +464,18 @@ async function loadHistPage(page) {
 
 function updateHistPager() {
   const { page, pages, total, limit } = histState;
+  if (histSource() === 'benchmark') {
+    document.getElementById('hist-count').textContent =
+      total ? `${total} benchmark alert${total !== 1 ? 's' : ''}` : 'none loaded';
+    document.getElementById('hist-pagination').style.display = 'none';
+    if (!total) {
+      document.getElementById('hist-empty').innerHTML =
+        '<i class="bi bi-clipboard-data fs-1 d-block mb-2 opacity-25"></i>' +
+        '<p class="mb-1">No benchmark alerts in MongoDB.</p>' +
+        '<code class="small">python3 scripts/load_benchmark_alerts.py</code>';
+    }
+    return;
+  }
   const from = Math.min((page - 1) * limit + 1, total);
   const to   = Math.min(page * limit, total);
   document.getElementById('hist-count').textContent =
@@ -440,10 +523,17 @@ function setLoading(prefix, on) {
   document.getElementById(prefix + '-loading').classList.toggle('d-none', !on);
 }
 
+const TOOL_BADGE = {
+  mmt:      { label: 'MMT',      bg: '#6f42c1' },
+  suricata: { label: 'Suricata', bg: '#bc4c00' },
+  snort:    { label: 'Snort',    bg: '#9a6700' },
+};
+
 function sourceBadge(alert) {
   const adapter = String(alert._adapter || '').toLowerCase();
-  if (adapter === 'mmt')
-    return '<span class="badge text-white" style="background:#6f42c1;font-size:.7rem">MMT</span>';
+  const tool = TOOL_BADGE[adapter];
+  if (tool)
+    return `<span class="badge text-white" style="background:${tool.bg};font-size:.7rem">${tool.label}</span>`;
   if (adapter.includes('wazuh'))
     return '<span class="badge text-white" style="background:#0c7abf;font-size:.7rem">Wazuh</span>';
   if (alert.Channel || alert.EventID || alert.EventRecordID)
@@ -464,6 +554,17 @@ function tcodeBadges(ids) {
   const more  = ids.length > 2
     ? `<span class="text-muted" style="font-size:.62rem">+${ids.length - 2}</span>` : '';
   return shown + more;
+}
+
+/* Expected (human-labelled) technique IDs — deliberately styled differently from
+   tcodeBadges() so a ground-truth label is never mistaken for a tag the alert carried. */
+function gtBadges(ids) {
+  if (!ids || !ids.length) return '<span class="text-muted">—</span>';
+  return ids.map(id =>
+    `<span class="badge font-monospace me-1" title="Expected technique (human label)"
+           style="font-size:.62rem;background:#dafbe1;color:#1a7f37;border:1px solid #1a7f37">
+       ${escHtml(id)}</span>`
+  ).join('');
 }
 
 /* Kafka live table (simple, client-side) */
@@ -542,6 +643,27 @@ function renderHistTable(alerts) {
     const ts = String(f.timestamp).replace('T', ' ').replace('Z', '').substring(0, 19);
     const id = escHtml(alert._id || '');
 
+    /* Benchmark rows carry a human label under _benchmark.ground_truth. They have no
+       MITRE tags of their own (by design — that is what sends them to Path B), so the
+       T-codes column shows what the orchestrator is EXPECTED to find, styled apart from
+       a real tag so the two are never read as the same thing. */
+    const bench = alert._benchmark;
+    const gt    = bench ? (bench.ground_truth || {}) : null;
+    const desc  = bench && !f.description ? '(signature stripped)' : f.description;
+    const tcodeCell = gt
+      ? gtBadges(gt.technique_ids)
+      : tcodeBadges(f.technique_ids);
+    const tacticCell = gt && (gt.tactic || []).length
+      ? (gt.tactic || []).map(tacticBadge).join(' ')
+      : tacticBadge(f.tactic);
+    const actionCell = bench
+      ? `<span class="text-muted" title="${escHtml(bench.note || '')}" style="font-size:.7rem">
+           <i class="bi bi-info-circle"></i></span>`
+      : `<button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:.65rem;line-height:1.4"
+                 onclick="deleteHistAlert('${id}', ${i}, event)" title="Delete">
+           <i class="bi bi-trash3"></i>
+         </button>`;
+
     return `
       <tr class="alert-row" data-idx="${i}" data-source="historical"
           onclick="selectAlert(${i}, 'historical')">
@@ -551,15 +673,11 @@ function renderHistTable(alerts) {
         <td class="font-monospace text-muted" style="font-size:.78rem">${escHtml(f.host)}</td>
         <td class="font-monospace text-muted" style="font-size:.78rem">${f.src_ip}</td>
         <td class="font-monospace text-muted" style="font-size:.78rem">${f.dst_ip}</td>
-        <td class="text-truncate" style="max-width:160px" title="${escHtml(f.description)}">${escHtml(f.description)}</td>
-        <td>${tacticBadge(f.tactic)}</td>
-        <td>${tcodeBadges(f.technique_ids)}</td>
-        <td>
-          <button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:.65rem;line-height:1.4"
-                  onclick="deleteHistAlert('${id}', ${i}, event)" title="Delete">
-            <i class="bi bi-trash3"></i>
-          </button>
-        </td>
+        <td class="text-truncate ${bench && !f.description ? 'text-muted fst-italic' : ''}"
+            style="max-width:160px" title="${escHtml(desc)}">${escHtml(desc)}</td>
+        <td>${tacticCell}</td>
+        <td>${tcodeCell}</td>
+        <td>${actionCell}</td>
       </tr>`;
   }).join('');
 }

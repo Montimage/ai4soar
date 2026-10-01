@@ -52,8 +52,15 @@ cacao:
     - remediation
     - investigation
     - notification
-  workflow_start: "step--kill-process"
+  workflow_start: "step--start"
   workflow:
+
+    # CACAO 2.0 requires every playbook to contain a start step, and
+    # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
+    step--start:
+      type: start
+      on_completion: "step--kill-process"
+
     step--kill-process:
       type: action
       name: "Kill malicious process"

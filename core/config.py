@@ -225,6 +225,7 @@ class MongoDBConfig:
     port: int = 27017
     database: str = 'ai4soar'
     alerts_collection: str = 'alerts'
+    benchmark_collection: str = 'benchmark_alerts'   # 37-alert MMT/Suricata/Snort set
     playbooks_collection: str = 'playbooks'
     mitre_kb_collection: str = 'mitre_kb'
 
@@ -241,7 +242,9 @@ class LLMConfig:
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     model: str = "gpt-4o-mini"                            # OpenAI model
-    anthropic_model: str = "claude-haiku-4-5-20251001"    # Anthropic model
+    anthropic_model: str = "claude-opus-4-8"              # Anthropic model — best
+                                                          # attribution accuracy on the
+                                                          # 37-alert benchmark
     ollama_host: str = "localhost"                        # local Ollama server host
     ollama_port: int = 11434                              # local Ollama server port
     ollama_model: str = "llama3.1"                        # Ollama model tag
@@ -253,6 +256,7 @@ class LLMConfig:
     reasoning_effort: str = "medium"                      # gpt-5* / o-series only
     attribution_vocab: str = "all"                        # "all" (697) | "parents" (222)
     attribution_max_tokens: int = 512                     # 5 ranked ids + short reasoning
+    attribution_top_k: int = 5                            # ranked ids ASKED of the model
     attribution_ranked_k: int = 5                         # ranked ids consulted for playbooks
     num_ctx_pinned: bool = False
     attribution_max_tokens_pinned: bool = False
@@ -278,8 +282,13 @@ class LLMConfig:
         self.attribution_max_tokens = int(
             os.getenv("LLM_ATTRIBUTION_MAX_TOKENS", str(self.attribution_max_tokens))
         )
+        self.attribution_top_k = int(
+            os.getenv("LLM_ATTRIBUTION_TOP_K", str(self.attribution_top_k))
+        )
+        # Consulting more candidates than the model was asked for is meaningless, so
+        # RANKED_K follows TOP_K unless it was set explicitly.
         self.attribution_ranked_k = int(
-            os.getenv("LLM_ATTRIBUTION_RANKED_K", str(self.attribution_ranked_k))
+            os.getenv("LLM_ATTRIBUTION_RANKED_K", str(self.attribution_top_k))
         )
 
 
@@ -303,6 +312,10 @@ class OrchestrationConfig:
     path_c_discount: float = 0.85
     # Bonus when Path B tactic and Path C tactic agree
     confirmation_bonus: float = 0.10
+    # Stage 2: run Path C at all. Off → Stage 2 is Path B alone, and an alert that
+    # Path B cannot attribute falls straight through to Path D instead of being
+    # answered by the ML model.
+    path_c_enabled: bool = True
 
     def __post_init__(self):
         self.early_exit_threshold = float(
@@ -317,6 +330,9 @@ class OrchestrationConfig:
         self.confirmation_bonus = float(
             os.getenv("ORCH_CONFIRMATION_BONUS", str(self.confirmation_bonus))
         )
+        self.path_c_enabled = os.getenv(
+            "ORCH_PATH_C_ENABLED", str(self.path_c_enabled)
+        ).strip().lower() not in ("0", "false", "no", "off")
 
 
 class ScenarioConfig:

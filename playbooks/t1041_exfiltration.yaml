@@ -54,8 +54,14 @@ cacao:
     - remediation
     - investigation
     - notification
-  workflow_start: "step--block-transfer"
+  workflow_start: "step--start"
   workflow:
+
+    # CACAO 2.0 requires every playbook to contain a start step, and
+    # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
+    step--start:
+      type: start
+      on_completion: "step--block-transfer"
 
     step--block-transfer:
       type: action

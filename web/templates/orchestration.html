@@ -125,6 +125,26 @@ let selectedSource = null;
   } catch (_) {}
 })();
 
+/* Benchmark alerts carry a human label and a text mode; both belong in the alert
+   panel so it is obvious the run is being scored against something. */
+function benchMeta() {
+  const b = selectedAlert && selectedAlert._benchmark;
+  if (!b) return '';
+  const gt   = (b.ground_truth || {}).technique_ids || [];
+  const mode = selectedAlert._mode === 'stripped'
+    ? '<span class="badge bg-secondary" style="font-size:.65rem">signature stripped</span>'
+    : '<span class="badge bg-secondary" style="font-size:.65rem">signature shown</span>';
+  return `
+    <dt class="col-sm-4 text-muted">Expected</dt>
+    <dd class="col-sm-8">
+      ${gt.map(id => `<span class="badge font-monospace me-1"
+         style="font-size:.65rem;background:#dafbe1;color:#1a7f37;border:1px solid #1a7f37">${escHtml(id)}</span>`).join('')}
+      <div class="text-muted mt-1" style="font-size:.7rem">
+        ${escHtml(b.source_tool || '')} · ${escHtml(b.note || '')} · ${mode}
+      </div>
+    </dd>`;
+}
+
 function renderAlertPanel() {
   if (!selectedAlert) return;
   const f = extractAlertFields(selectedAlert);
@@ -141,7 +161,8 @@ function renderAlertPanel() {
     <dt class="col-sm-4 text-muted">Description</dt>
     <dd class="col-sm-8">${escHtml(f.description)}</dd>
     <dt class="col-sm-4 text-muted">Technique</dt>
-    <dd class="col-sm-8 font-monospace text-info small">${escHtml(f.technique)}</dd>
+    <dd class="col-sm-8 font-monospace small" style="color:#0969da">${escHtml(f.technique)}</dd>
+    ${benchMeta()}
     <dt class="col-sm-4 text-muted">Source IP</dt>
     <dd class="col-sm-8 font-monospace small">${f.src_ip}</dd>
     <dt class="col-sm-4 text-muted">Dest IP</dt>
@@ -187,9 +208,93 @@ function renderOrchResult(r) {
   const techBadges = (r.technique_ids || [])
     .map((id, i) => {
       const name = (r.technique_names || [])[i] || '';
-      return `<span class="badge font-monospace me-1 mb-1 text-dark" style="background:#e2e8f0;border:1px solid #94a3b8"
-               style="font-size:.7rem">${id}${name ? ' · ' + name : ''}</span>`;
+      return `<span class="badge font-monospace me-1 mb-1 text-dark"
+               style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.7rem">${id}${name ? ' \u00b7 ' + name : ''}</span>`;
     }).join('');
+
+  /* Path B returns its FULL ranked top-k, not just the techniques that resolved to a
+     playbook. Showing the whole ranking makes a library coverage gap visible (the model
+     attributed correctly but we have no CACAO template) instead of silently dropping it,
+     and gives the analyst the model's runner-up hypotheses. */
+  const ranked = r.ranked_technique_ids || [];
+  const acted  = new Set(r.technique_ids || []);
+  const techName = (id, rank) => {
+    // Names come from the API (resolved against the full ATT&CK vocabulary); the static
+    // JS map is only a fallback for responses predating ranked_technique_names.
+    const byRank = (r.ranked_technique_names || [])[rank];
+    if (byRank) return byRank;
+    const i = (r.technique_ids || []).indexOf(id);
+    if (i >= 0 && (r.technique_names || [])[i]) return r.technique_names[i];
+    return (typeof MITRE_NAMES !== 'undefined' && MITRE_NAMES[id]) || '';
+  };
+
+  /* When the alert came from the labelled benchmark, say plainly whether the
+     orchestrator got it right. Sub-techniques count as a parent-level hit (T1499.002
+     vs T1499) because the playbook library is indexed at both levels. */
+  const verdictSection = (() => {
+    const b = selectedAlert && selectedAlert._benchmark;
+    if (!b) return '';
+    const gt = (b.ground_truth || {}).technique_ids || [];
+    if (!gt.length) return '';
+
+    const parent   = id => String(id).split('.')[0];
+    const gtSet    = new Set(gt);
+    const gtParent = new Set(gt.map(parent));
+    const top1     = ranked[0] || (r.technique_ids || [])[0] || '';
+    const all      = ranked.length ? ranked : (r.technique_ids || []);
+
+    let cls, icon, text;
+    if (gtSet.has(top1)) {
+      cls = 'rank-flag-hit'; icon = 'check-circle-fill';
+      text = `Exact match at rank 1 — expected ${gt.join(', ')}`;
+    } else if (gtParent.has(parent(top1))) {
+      cls = 'rank-flag-hit'; icon = 'check-circle';
+      text = `Parent match at rank 1 — predicted ${top1}, expected ${gt.join(', ')}`;
+    } else if (all.some(t => gtSet.has(t) || gtParent.has(parent(t)))) {
+      const at = all.findIndex(t => gtSet.has(t) || gtParent.has(parent(t))) + 1;
+      cls = 'rank-flag-gap'; icon = 'exclamation-triangle';
+      text = `Expected ${gt.join(', ')} found at rank ${at}, not rank 1`;
+    } else {
+      cls = 'rank-flag-miss'; icon = 'x-circle';
+      text = `Miss — expected ${gt.join(', ')}, none of the ranked techniques match`;
+    }
+    return `
+      <div class="mb-3">
+        <span class="rank-flag ${cls}" style="font-size:.72rem;padding:4px 10px">
+          <i class="bi bi-${icon} me-1"></i>${escHtml(text)}
+        </span>
+      </div>`;
+  })();
+
+  const rankedSection = ranked.length ? `
+    <div class="mb-3">
+      <div class="small text-muted mb-2">
+        <i class="bi bi-list-ol me-1"></i>LLM Technique Attribution
+        <span class="badge bg-secondary ms-1">top ${ranked.length}</span>
+      </div>
+      <div class="d-flex flex-column gap-1">
+        ${ranked.map((id, i) => {
+          /* Covered = the library holds a template for this technique, whether or not a
+             higher-ranked technique already contributed that same playbook. Only the
+             coverage gap is actionable, so that is the only distinction drawn. */
+          const covered = acted.has(id) || Boolean((r.ranked_technique_covered || [])[i]);
+          const name    = techName(id, i);
+          const flag = covered
+            ? `<span class="rank-flag rank-flag-hit ms-auto flex-shrink-0">
+                 <i class="bi bi-journal-code me-1"></i>playbook</span>`
+            : `<span class="rank-flag rank-flag-gap ms-auto flex-shrink-0"
+                     title="The LLM attributed this technique but the playbook library has no CACAO template for it">
+                 <i class="bi bi-exclamation-triangle me-1"></i>no template</span>`;
+          return `
+          <div class="d-flex align-items-center gap-2" style="font-size:.75rem">
+            <span class="rank-badge flex-shrink-0">#${i + 1}</span>
+            <code class="flex-shrink-0 ${covered ? 'rank-tid' : 'rank-tid-unused'}">${escHtml(id)}</code>
+            <span class="text-truncate ${covered ? '' : 'rank-name-unused'}">${escHtml(name)}</span>
+            ${flag}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
 
   const tacticBadges = (r.tactics || [])
     .map(t => `<span class="badge bg-secondary me-1 mb-1">${t}</span>`).join('');
@@ -286,7 +391,10 @@ function renderOrchResult(r) {
       ${pathBadges}
       ${actionBadges}
     </div>
-    ${techBadges   ? `<div class="mb-2">${techBadges}</div>` : ''}
+    ${verdictSection}
+    ${ranked.length
+        ? rankedSection
+        : (techBadges ? `<div class="mb-2">${techBadges}</div>` : '')}
     ${tacticBadges ? `<div class="mb-3">${tacticBadges}</div>` : ''}
     ${llmSection}
     ${cacaoSection}

@@ -24,6 +24,13 @@ import networkx as nx
 
 logger = logging.getLogger(__name__)
 
+# CACAO 2.0 workflow step types (data/cacao-schemas/workflows/). 'single' belongs
+# to the pre-2.0 drafts and is NOT valid here.
+_CACAO_STEP_TYPES = frozenset({
+    "start", "end", "action", "playbook-action",
+    "parallel", "if-condition", "while-condition", "switch-condition",
+})
+
 _UUID_RE      = re.compile(r"^playbook--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _PLACEHOLDER  = re.compile(r"\{\{\w+\}\}")
 
@@ -176,6 +183,46 @@ def verify_cacao_spec(cacao: Dict, is_template: bool = False) -> List[Verificati
             score=VerificationScore.CRITICAL_ISSUE.value,
             severity="error",
         ))
+
+    # CACAO 2.0 mandates a start step, an action/playbook-action step and an end step,
+    # and workflow_start MUST point at the start step (data/cacao-schemas/playbook.json).
+    # The structural pass below finds entry points by in-degree, which cannot tell a
+    # conformant start step from an action that simply happens to be first.
+    if ws and ws in workflow:
+        ws_type = (workflow[ws] or {}).get("type")
+        if ws_type != "start":
+            issues.append(VerificationIssue(
+                description=(
+                    f"'workflow_start' must reference a step of type 'start', "
+                    f"but '{ws}' is type '{ws_type}'"
+                ),
+                score=VerificationScore.MAJOR_ISSUE.value,
+                node_id=ws,
+                severity="error",
+            ))
+
+    step_types = [(step or {}).get("type") for step in workflow.values()]
+    for required, label in (("start", "start"), ("end", "end")):
+        if required not in step_types:
+            issues.append(VerificationIssue(
+                description=f"Workflow has no '{label}' step; CACAO 2.0 requires one",
+                score=VerificationScore.MAJOR_ISSUE.value,
+                severity="error",
+            ))
+
+    # Step types outside the CACAO 2.0 vocabulary (e.g. the pre-2.0 'single')
+    for step_id, step in workflow.items():
+        st = (step or {}).get("type")
+        if st and st not in _CACAO_STEP_TYPES:
+            issues.append(VerificationIssue(
+                description=(
+                    f"Step '{step_id}' has type '{st}', which is not a CACAO 2.0 "
+                    f"workflow step type"
+                ),
+                score=VerificationScore.MAJOR_ISSUE.value,
+                node_id=step_id,
+                severity="error",
+            ))
 
     # on_success / on_failure / on_completion must reference existing steps
     for step_id, step in workflow.items():

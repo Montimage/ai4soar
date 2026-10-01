@@ -8,6 +8,8 @@ Stage 1 (instant)
 Stage 2 (parallel)
   Run Path B (LLM technique attribution) and Path C (ML similarity) concurrently.
   Fuse their results via the Decision Engine.
+  Path C can be switched off entirely with ORCH_PATH_C_ENABLED=false, leaving Path B
+  as the sole Stage 2 signal.
   If fused confidence ≥ low_confidence_threshold → MEDIUM or HIGH, done.
 
 Stage 3 (fallback)
@@ -75,11 +77,12 @@ class PlaybookOrchestrator:
         b_result: Optional[PathResult] = None
         c_result: Optional[PathResult] = None
 
+        run_c   = config.orchestration.path_c_enabled
+        futures = {}
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {
-                pool.submit(self._path_b.run, enriched, k): "B",
-                pool.submit(self._path_c.run, enriched, k): "C",
-            }
+            futures[pool.submit(self._path_b.run, enriched, k)] = "B"
+            if run_c:
+                futures[pool.submit(self._path_c.run, enriched, k)] = "C"
             for future in as_completed(futures):
                 tag = futures[future]
                 try:
@@ -90,6 +93,9 @@ class PlaybookOrchestrator:
                         c_result = result
                 except Exception as exc:
                     logger.error(f"[Orchestrator] Path {tag} raised: {exc}", exc_info=True)
+
+        if not run_c:
+            logger.info("[Orchestrator] Path C disabled (ORCH_PATH_C_ENABLED=false)")
 
         fused = fuse(b_result, c_result)
 

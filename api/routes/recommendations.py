@@ -12,7 +12,10 @@ from core.config import config
 from core.intelligent_orchestration.enrichment.pipeline import EnrichmentPipeline
 from core.intelligent_orchestration.orchestrator import PlaybookOrchestrator
 from core.intelligent_orchestration.stix_knowledge_base import STIXKnowledgeBase
+from core.exceptions import LLMUnavailableError
 from core.playbook_library.loader import PlaybookLibrary
+from utils.llm.attribution import load_vocab, technique_name
+from utils.llm.client import attribution_spec
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,15 @@ def recommend_playbooks():
             "requires_human_review":  false,
             "technique_ids":          ["T1110.001"],
             "technique_names":        ["Brute Force: Password Guessing"],
+            "ranked_technique_ids":   ["T1110.001", "T1110.003", "T1078"],
+                                      # Path B only: the model's full ranked top-k,
+                                      # including candidates with no library template
+            "ranked_technique_names": ["Password Guessing", "Password Spraying",
+                                       "Valid Accounts"],
+            "ranked_technique_covered": [true, true, false],
+                                      # per ranked id: does the library hold ANY template
+                                      # for it (true but absent from technique_ids = its
+                                      # template was already supplied by a higher rank)
             "tactics":                ["credential-access"],
             "llm_reasoning":          "...",
             "playbook_count":         3,
@@ -75,6 +87,21 @@ def recommend_playbooks():
 
         payload = result.to_dict()
         payload["playbook_count"] = len(payload["playbooks"])
+        # Names for Path B's full ranking, including the candidates that resolved to no
+        # playbook: the UI shows them, and the static JS name map covers only a third of
+        # the 697-technique attribution vocabulary.
+        payload["ranked_technique_names"] = [
+            technique_name(t) for t in payload.get("ranked_technique_ids", [])
+        ]
+        # Whether the LIBRARY covers each ranked technique at all. Distinct from
+        # technique_ids, which lists only the techniques that contributed a NEW playbook:
+        # when two ranked techniques share one template (T1498 and T1499 are both on
+        # pb-t1499-block-dos-source), the lower-ranked one is deduplicated away and would
+        # otherwise be indistinguishable from a genuine coverage gap.
+        payload["ranked_technique_covered"] = [
+            bool(_library.get_for_technique(t))
+            for t in payload.get("ranked_technique_ids", [])
+        ]
         # Backward-compat alias so old clients keep working
         payload["review_required"] = result.requires_human_review or result.requires_human_approval
 
@@ -160,7 +187,16 @@ def describe_paths():
     Describe the 3-stage recommendation pipeline: status, latency, thresholds.
     Useful for operator dashboards.
     """
-    llm_configured = bool(config.llm.openai_api_key or config.llm.anthropic_api_key)
+    # Resolve Path B exactly as the recommender does (utils/llm/client.attribution_spec),
+    # so a local Ollama deployment is not reported as "unavailable" and the model name
+    # shown is the one that will actually be called.
+    try:
+        spec           = attribution_spec()
+        llm_configured = True
+    except LLMUnavailableError:
+        spec           = None
+        llm_configured = False
+
     ml_model_path  = {
         "knn":     config.model.knn_path,
         "lr":      config.model.lr_path,
@@ -202,12 +238,29 @@ def describe_paths():
                 ),
                 "latency": "1–5 s (gated by Path B LLM call)",
                 "path_b": {
-                    "status":              "available" if llm_configured else "unavailable — set OPENAI_API_KEY or ANTHROPIC_API_KEY",
-                    "model":               config.llm.anthropic_model if config.llm.anthropic_api_key else config.llm.model,
+                    "status":   "available" if llm_configured else (
+                        "unavailable — set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
+                        "or LLM_PROVIDER=ollama"),
+                    "provider": spec["provider"] if spec else None,
+                    "model":    spec["model"] if spec else None,
                     "confidence_threshold": config.llm.technique_confidence_threshold,
+                    # Attribution settings — the knobs that decide accuracy; num_ctx
+                    # matters for Ollama, which silently truncates the vocabulary.
+                    "vocab":            config.llm.attribution_vocab,
+                    "vocab_size":       len(load_vocab(config.llm.attribution_vocab)[0]),
+                    "top_k":            config.llm.attribution_top_k,
+                    "ranked_k":         config.llm.attribution_ranked_k,
+                    "max_tokens":       spec["max_tokens"] if spec else None,
+                    "num_ctx":          spec["num_ctx"] if spec and spec["provider"] == "ollama" else None,
                 },
                 "path_c": {
-                    "status":       "available" if ml_ready else "unavailable — train model first",
+                    "status": (
+                        "disabled — ORCH_PATH_C_ENABLED=false"
+                        if not config.orchestration.path_c_enabled
+                        else "available" if ml_ready
+                        else "unavailable — train model first"
+                    ),
+                    "enabled":      config.orchestration.path_c_enabled,
                     "active_model": config.model.active_model.upper(),
                 },
             },
@@ -219,7 +272,9 @@ def describe_paths():
                 "latency": "2–10 s",
                 "confidence_tier": "LOW — always requires human review",
                 "output_format": "OASIS CACAO 2.0",
-                "status": "available" if llm_configured else "unavailable — set OPENAI_API_KEY or ANTHROPIC_API_KEY",
+                "status": "available" if llm_configured else (
+                    "unavailable — set OPENAI_API_KEY or ANTHROPIC_API_KEY, "
+                    "or LLM_PROVIDER=ollama"),
             },
         ],
     }), 200

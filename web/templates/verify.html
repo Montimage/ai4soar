@@ -13,34 +13,35 @@
 
   <!-- ── Left: input panel ── -->
   <div class="col-12 col-lg-5">
-    <div class="card">
+    <div class="card" style="height:calc(100vh - 165px); min-height:520px">
       <div class="card-header py-2">
-        <span class="fw-semibold small"><i class="bi bi-pencil-square me-1 text-primary"></i>Playbook Input</span>
+        <span class="fw-semibold" style="font-size:.875rem"><i class="bi bi-pencil-square me-1 text-primary"></i>Playbook Input</span>
       </div>
-      <div class="card-body pb-2">
+      <div class="card-body pb-2 d-flex flex-column" id="input-card-body"
+           style="overflow:hidden">
 
         <!-- Source tabs -->
-        <ul class="nav nav-tabs nav-sm mb-3" id="inputTabs" role="tablist">
+        <ul class="nav nav-tabs mb-3" id="inputTabs" role="tablist">
           <li class="nav-item" role="presentation">
-            <button class="nav-link active small py-1" data-bs-toggle="tab"
-                    data-bs-target="#input-paste" type="button">
+            <button class="nav-link active fw-semibold py-1" style="font-size:.875rem"
+                    data-bs-toggle="tab" data-bs-target="#input-paste" type="button">
               <i class="bi bi-clipboard me-1"></i>Paste JSON
             </button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link small py-1" data-bs-toggle="tab"
-                    data-bs-target="#input-library" type="button">
+            <button class="nav-link fw-semibold py-1" style="font-size:.875rem"
+                    data-bs-toggle="tab" data-bs-target="#input-library" type="button">
               <i class="bi bi-journal-code me-1"></i>Load from Library
             </button>
           </li>
         </ul>
 
-        <div class="tab-content">
+        <div class="tab-content" id="input-tab-content">
           <!-- Paste tab -->
           <div class="tab-pane fade show active" id="input-paste">
-            <div class="mb-2">
+            <div class="mb-2 cacao-fill">
               <textarea class="form-control font-monospace"
-                        id="playbook-json" rows="18" spellcheck="false"
+                        id="playbook-json" spellcheck="false"
                         placeholder='Paste CACAO 2.0 JSON, Shuffle workflow JSON, or internal {nodes:[...]} format…'
                         style="font-size:.82rem; resize:vertical"></textarea>
             </div>
@@ -66,9 +67,9 @@
                 <option value="">— choose a playbook —</option>
               </select>
             </div>
-            <div id="library-preview" class="d-none">
+            <div id="library-preview" class="d-none cacao-fill">
               <div class="small text-muted mb-1">CACAO Preview</div>
-              <pre class="json-viewer" id="library-json-preview" style="max-height:300px"></pre>
+              <pre class="json-viewer" id="library-json-preview"></pre>
             </div>
           </div>
         </div>
@@ -94,11 +95,11 @@
 
   <!-- ── Right: results panel ── -->
   <div class="col-12 col-lg-7">
-    <div class="card h-100">
+    <div class="card" style="height:calc(100vh - 165px); min-height:520px">
       <div class="card-header py-2">
-        <span class="fw-semibold small"><i class="bi bi-clipboard2-check me-1 text-primary"></i>Verification Results</span>
+        <span class="fw-semibold" style="font-size:.875rem"><i class="bi bi-clipboard2-check me-1 text-primary"></i>Verification Results</span>
       </div>
-      <div class="card-body">
+      <div class="card-body" style="overflow:auto">
 
         <!-- Idle state -->
         <div id="result-idle" class="text-center py-5 text-muted">

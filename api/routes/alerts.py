@@ -13,6 +13,7 @@ from flask import Response, request, jsonify, stream_with_context
 from api.routes import alerts_bp
 from core.alerts_consumer.wazuh import fetch_alerts as wazuh_fetch_alerts
 from core.database.alert_service import AlertService
+from core.database.benchmark_service import MODE_VISIBLE, MODES, benchmark_service
 from core.config import config
 from core.intelligent_orchestration.enrichment.pipeline import normalize_alert
 
@@ -134,6 +135,51 @@ def get_historical_alerts():
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Error getting historical alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@alerts_bp.route('/benchmark_alerts', methods=['GET'])
+def get_benchmark_alerts():
+    """
+    The curated 37-alert MMT / Suricata / Snort benchmark, for exercising the
+    orchestrator against known ground truth.
+
+    Query params:
+        source_tool  str  mmt | suricata | snort | all (default all)
+        mode         str  visible (default) | stripped — whether the detection
+                          signature is shown to the model, the two modes the
+                          benchmark was scored under
+        search       str  free text over signature, note, technique id, tactic
+
+    Response: { alerts: [...], total: N, counts: {all, mmt, snort, suricata}, mode }
+
+    Each alert carries its label under `_benchmark.ground_truth`; that key is invisible
+    to the pipeline (extract_mitre_ids reads only _source.rule.mitre), so these alerts
+    reach Path B unattributed and the label can be compared against what it predicts.
+    """
+    try:
+        source_tool = request.args.get('source_tool', 'all').strip().lower()
+        mode        = request.args.get('mode', MODE_VISIBLE).strip().lower()
+        search      = request.args.get('search', '').strip()
+        if mode not in MODES:
+            return jsonify({'error': f"mode must be one of {list(MODES)}"}), 400
+
+        result = benchmark_service.list_alerts(
+            source_tool=source_tool, mode=mode, search=search
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Error getting benchmark alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@alerts_bp.route('/benchmark_alerts/stats', methods=['GET'])
+def get_benchmark_stats():
+    """Coverage of the benchmark set: totals by tool and by tactic."""
+    try:
+        return jsonify(benchmark_service.stats()), 200
+    except Exception as e:
+        logger.error(f"Error getting benchmark stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 
