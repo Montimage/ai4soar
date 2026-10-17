@@ -43,6 +43,8 @@ def _ping_shuffle():
 
 
 def _ping_mongodb():
+    # host/port/database only: the config holds no credentials
+    url = f"mongodb://{config.mongodb.host}:{config.mongodb.port}/{config.mongodb.database}"
     t0 = time.monotonic()
     try:
         client = MongoClient(
@@ -53,9 +55,9 @@ def _ping_mongodb():
         client.admin.command("ping")
         latency = int((time.monotonic() - t0) * 1000)
         client.close()
-        return {"status": "ok", "latency_ms": latency}
+        return {"status": "ok", "latency_ms": latency, "url": url}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": str(e), "url": url}
 
 
 def _ping_kafka():

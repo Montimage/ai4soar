@@ -128,12 +128,12 @@
               </div>
               <div id="pass-badge"></div>
             </div>
-            <div class="text-muted small text-end" id="llm-status"></div>
           </div>
 
           <!-- Issues grouped by category -->
           <div id="issues-spec"       class="mb-3"></div>
           <div id="issues-structural" class="mb-3"></div>
+          <div id="issues-safety"     class="mb-3"></div>
           <div id="issues-llm"        class="mb-3"></div>
 
           <!-- All-clear -->
@@ -219,22 +219,37 @@ function clearInput() {
 }
 
 function loadExample(fmt) {
+  // A complete, valid CACAO 2.0 playbook (passes the official schema): identifiers are
+  // "<type>--<uuid>", there is a start step, every action names its agent.
+  const id = type => `${type}--${crypto.randomUUID()}`;
+  const start = id('start'), block = id('action'), end = id('end'), runner = id('linux');
+  const now = new Date().toISOString();
   const example = {
     type: "playbook",
     spec_version: "cacao-2.0",
-    id: "playbook--" + crypto.randomUUID(),
-    name: "Example Block Attacker",
-    created: new Date().toISOString(),
-    modified: new Date().toISOString(),
-    workflow_start: "step--block",
+    id: id('playbook'),
+    name: "Example: block an attacker IP",
+    description: "Drop traffic from 203.0.113.9 at the gateway and record it",
+    created_by: "identity--c8bde83a-ff38-57ad-bec8-7f3775beb1e4",
+    created: now,
+    modified: now,
+    agent_definitions: {
+      [runner]: { type: "linux", name: "Playbook runner (network gateway)", address: { ipv4: ["127.0.0.1"] } }
+    },
+    workflow_start: start,
     workflow: {
-      "step--block": {
+      [start]: { type: "start", on_completion: block },
+      [block]: {
         type: "action",
-        name: "Block source IP",
-        commands: [{ type: "bash", command: "iptables -I INPUT -s {{src_ip}} -j DROP" }],
-        on_completion: "step--end"
+        name: "Block 203.0.113.9 at the firewall",
+        agent: runner,
+        commands: [{
+          type: "bash",
+          command: "iptables -I FORWARD -s 203.0.113.9 -j DROP && echo \"BLOCKED 203.0.113.9\" >> /var/log/ai4soar_blocks.log"
+        }],
+        on_completion: end
       },
-      "step--end": { type: "end" }
+      [end]: { type: "end" }
     }
   };
   document.getElementById('playbook-json').value = JSON.stringify(example, null, 2);
@@ -261,6 +276,8 @@ async function runVerification() {
       structural_only: structOnly,
       is_template:     libraryActive,
     });
+    if (handedOverOptional && JSON.stringify(parsed) === handedOverOptional.json)
+      qs.set('optional_params', handedOverOptional.params.join(','));
     const result = await apiFetch(`/verify_playbook?${qs}`, {
       method: 'POST',
       body: JSON.stringify(parsed),
@@ -298,13 +315,23 @@ function renderResults(r, structOnly) {
     ? '<span class="badge bg-success"><i class="bi bi-check-lg me-1"></i>PASSED</span>'
     : '<span class="badge bg-danger"><i class="bi bi-x-lg me-1"></i>FAILED</span>';
 
-  // LLM status
-  const llmSt = r.llm_checked || (structOnly ? 'skipped (structural only)' : 'skipped');
-  document.getElementById('llm-status').innerHTML =
-    `<i class="bi bi-cpu me-1"></i>LLM: <span class="text-muted">${escHtml(llmSt)}</span>`;
+  // LLM outcome is shown once, in the "LLM Semantic" group: skipped, failed, or its issues
+  const llmError = String(r.llm_checked || '').startsWith('error') ? r.llm_checked : '';
 
-  // Group issues
+  // Group issues: by the verifier's category; description matching is only the
+  // fallback for issues without one
   const allIssues = r.issues || [];
+  const byCat = cats => allIssues.filter(i => cats.includes(i.category));
+  if (allIssues.every(i => i.category)) {
+    renderIssueGroup('issues-spec',       'Spec Compliance (incl. official CACAO schema)', byCat(['spec', 'schema']));
+    renderIssueGroup('issues-structural', 'Structural',    byCat(['structural']));
+    renderIssueGroup('issues-safety',     'Safety Policy', byCat(['safety']));
+    renderIssueGroup('issues-llm',        'LLM Semantic',  byCat(['llm']), structOnly, llmError);
+    document.getElementById('all-clear').classList.toggle('d-none', allIssues.length > 0);
+    show('result-body');
+    return;
+  }
+  document.getElementById('issues-safety').innerHTML = '';
   const spec       = allIssues.filter(i =>
     i.description.includes('CACAO') || i.description.includes('UUID') ||
     i.description.includes('placeholder') || i.description.includes('Missing required') ||
@@ -319,19 +346,21 @@ function renderResults(r, structOnly) {
 
   renderIssueGroup('issues-spec',       'Spec Compliance',  spec);
   renderIssueGroup('issues-structural', 'Structural',       structural);
-  renderIssueGroup('issues-llm',        'LLM Semantic',     llm, structOnly);
+  renderIssueGroup('issues-llm',        'LLM Semantic',     llm, structOnly, llmError);
 
   document.getElementById('all-clear').classList.toggle('d-none', allIssues.length > 0);
   show('result-body');
 }
 
-function renderIssueGroup(elId, label, issues, skipped = false) {
+function renderIssueGroup(elId, label, issues, skipped = false, error = '') {
   const el = document.getElementById(elId);
   const SEV_CLS = { error: 'danger', warning: 'warning', info: 'info' };
 
   let content;
   if (skipped) {
     content = `<div class="text-muted small fst-italic">Skipped — enable LLM check to run semantic validation.</div>`;
+  } else if (error) {
+    content = `<div class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>LLM check failed: ${escHtml(error.replace(/^error:\s*/, ''))}</div>`;
   } else if (!issues.length) {
     content = `<div class="text-success small"><i class="bi bi-check-circle me-1"></i>No issues found.</div>`;
   } else {
@@ -352,7 +381,7 @@ function renderIssueGroup(elId, label, issues, skipped = false) {
   el.innerHTML = `
     <div class="mb-1 small fw-semibold text-muted text-uppercase" style="letter-spacing:.5px;font-size:.7rem">
       ${label}
-      ${!skipped ? `<span class="badge bg-secondary ms-1 fw-normal">${issues.length}</span>` : ''}
+      ${!skipped && !error ? `<span class="badge bg-secondary ms-1 fw-normal">${issues.length}</span>` : ''}
     </div>
     ${content}`;
 }
@@ -365,5 +394,23 @@ function escHtml(s) {
 }
 
 initLibrary();
+
+/* Optional parameters of the handed-over playbook; applied only while the pasted JSON is
+   still that playbook */
+let handedOverOptional = null;
+
+/* A playbook handed over from the Orchestration page ("Open in Verify"): load it into
+   the paste box once; the user picks the checks and runs them. */
+(function loadHandedOver() {
+  let item;
+  try {
+    item = JSON.parse(localStorage.getItem('ai4soar_verify_playbook') || 'null');
+    localStorage.removeItem('ai4soar_verify_playbook');
+  } catch (_) { return; }
+  if (!item || !item.cacao) return;
+  document.getElementById('playbook-json').value = JSON.stringify(item.cacao, null, 2);
+  handedOverOptional = { json: JSON.stringify(item.cacao), params: item.optional || [] };
+  showToast(`Loaded "${escHtml(item.name)}" from Orchestration. Tick the LLM check for a semantic review, then Verify.`, 'info');
+})();
 </script>
 {% endblock %}

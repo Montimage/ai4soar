@@ -268,3 +268,7 @@ code { color: #0969da; background: #eaeef2; padding: 1px 5px; border-radius: 4px
 
 /* Alerts → Live tabs: read-only broker field sized to its address (size attr set in JS) */
 .input-group > .form-control.broker-input { flex: 0 0 auto; width: auto; }
+
+/* Orchestration → Selected Alert: raw JSON uses the card's spare height and wraps long
+   values at word boundaries instead of splitting them mid-word */
+.json-viewer-fit { max-height: min(60vh, 640px); font-size: .72rem; word-break: normal; overflow-wrap: anywhere; tab-size: 2; }

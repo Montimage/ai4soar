@@ -409,9 +409,10 @@ const CacaoGraph = (() => {
       extras.push(`<div class="mt-2"><div class="cacao-sub">headers</div>
         <pre class="cacao-pre">${escWithParams(JSON.stringify(cmd.headers, null, 2))}</pre></div>`);
     }
-    if (cmd.body) {
-      extras.push(`<div class="mt-2"><div class="cacao-sub">body</div>
-        <pre class="cacao-pre">${escWithParams(String(cmd.body).trim())}</pre></div>`);
+    const payload = cmd.content ?? cmd.body;   // CACAO 2.0 calls it "content"
+    if (payload) {
+      extras.push(`<div class="mt-2"><div class="cacao-sub">content</div>
+        <pre class="cacao-pre">${escWithParams(String(payload).trim())}</pre></div>`);
     }
     const badge = type === 'bash'
       ? '<span class="badge" style="background:#24292f;color:#fff;font-size:.62rem">bash</span>'
@@ -434,13 +435,23 @@ const CacaoGraph = (() => {
     const cmds = (step.commands || []).map(commandHtml).join('')
       || '<div class="text-muted small">No commands — this step only routes control.</div>';
 
+    // Who executes the commands: http-api commands are sent to the agent's address
+    const agent = step.agent && ((cacao.agent_definitions || {})[step.agent]);
+    const agentHtml = agent ? `
+      <div class="cacao-sub mt-3">Agent</div>
+      <div class="small">${esc(agent.name || agent.type || step.agent)}</div>
+      ${Object.entries(agent.address || {}).map(([kind, vals]) =>
+        `<pre class="cacao-pre mt-1">${esc(kind)}: ${escWithParams([].concat(vals).join(', '))}</pre>`).join('')}` : '';
+
     return `
       <div class="mb-2">
         <div class="fw-semibold">${esc(step.name || id)}</div>
         <code class="text-muted" style="font-size:.7rem">${esc(id)}</code>
         <span class="badge bg-secondary ms-1" style="font-size:.62rem">${esc(step.type || 'action')}</span>
       </div>
-      <div class="cacao-sub mt-3">Commands</div>
+      ${agentHtml}
+      <div class="cacao-sub mt-3">Commands${(step.commands || []).length > 1
+        ? ' <span class="text-muted text-lowercase fw-normal">· all run, in this order</span>' : ''}</div>
       ${cmds}`;
   }
 
@@ -450,5 +461,100 @@ const CacaoGraph = (() => {
     return '{' + '{' + String(name ?? '') + '}' + '}';
   }
 
-  return { render, stepDetailHtml, escWithParams, paramLabel };
+  // -------------------------------------------------------------------------
+  // Graph modal (markup in templates/_cacao_graph_modal.html)
+  // -------------------------------------------------------------------------
+  let modalPlaybook = null;
+
+  /* "cacao-2.0" → "CACAO 2.0" */
+  function specVersion(pb) {
+    const v = pb.cacao && pb.cacao.spec_version;
+    return v ? String(v).replace(/^cacao-/i, 'CACAO ') : '—';
+  }
+
+  /* `pb` is either a library template ({id, name, version, parameters, cacao}) or a
+     recommended playbook already filled from an alert ({id, name, cacao,
+     parameters_filled, parameters_missing}). */
+  function openModal(pb) {
+    if (!pb) return;
+    modalPlaybook = pb;
+    document.getElementById('graph-title').textContent = pb.name || pb.id;
+    document.getElementById('graph-id').textContent    = pb.id;
+
+    const { svg, order } = render(pb.cacao || {});
+    const canvas = document.getElementById('graph-canvas');
+    canvas.innerHTML = svg;
+    canvas.querySelectorAll('.cacao-node').forEach(node => {
+      node.addEventListener('click', () => selectModalStep(node.dataset.step));
+    });
+
+    renderModalMeta(pb);
+    // Open on the entry step so the panel is never empty.
+    selectModalStep((pb.cacao || {}).workflow_start || order[0]);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('graphModal')).show();
+  }
+
+  function selectModalStep(stepId) {
+    if (!modalPlaybook || !stepId) return;
+    document.getElementById('graph-detail').innerHTML =
+      stepDetailHtml(modalPlaybook.cacao || {}, stepId);
+    document.querySelectorAll('#graph-canvas .cacao-node').forEach(n => {
+      n.classList.toggle('cacao-node-active', n.dataset.step === stepId);
+    });
+  }
+
+  function chip(text, title, style) {
+    return `<span class="badge me-1 mb-1 font-monospace" style="font-size:.62rem;${style}"
+                  title="${esc(title || '')}">${text}</span>`;
+  }
+
+  function renderModalMeta(pb) {
+    const c = pb.cacao || {};
+    const cell = (label, value) => `
+      <div class="col-6 col-md-3">
+        <div class="text-muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.4px">${label}</div>
+        <div>${value}</div>
+      </div>`;
+    const types = (c.playbook_types || []).map(t =>
+      `<span class="badge bg-secondary me-1" style="font-size:.62rem">${esc(t)}</span>`).join('') || '—';
+
+    let paramsTitle, paramsHtml;
+    if (pb.parameters_filled) {
+      // Recommended playbook: show the values taken from the alert, and what is still open
+      const filled  = pb.parameters_filled || {};
+      const missing = pb.parameters_missing || [];
+      const rejected = pb.parameters_rejected || [];
+      const leftover = [...new Set((JSON.stringify(c).match(/\{\{([^}]+)\}\}/g) || [])
+        .map(m => m.slice(2, -2)))].filter(n => !(n in filled) && !missing.includes(n) && !rejected.includes(n));
+      paramsTitle = 'Parameters filled from this alert';
+      paramsHtml =
+          Object.entries(filled).map(([k, v]) => chip(`${esc(k)} = ${esc(v)}`, 'From the alert IoCs',
+            'background:#dafbe1;color:#116329;border:1px solid #4ac26b')).join('')
+        + missing.map(n => chip(`${esc(paramLabel(n))} *`, 'Required, not found in the alert',
+            'background:#ffebe9;color:#cf222e;border:1px solid #ff8182')).join('')
+        + rejected.map(n => chip(`${esc(paramLabel(n))} rejected`, 'The alert value was unsafe for a shell command and was not used',
+            'background:#ffebe9;color:#cf222e;border:1px dashed #ff8182')).join('')
+        + leftover.map(n => chip(esc(paramLabel(n)), 'Optional, not found in the alert',
+            'background:#f6f8fa;color:#57606a;border:1px solid #d0d7de')).join('')
+        || '—';
+    } else {
+      paramsTitle = 'Parameters substituted into the commands (* required)';
+      paramsHtml = (pb.parameters || []).map(p => chip(
+        `${esc(paramLabel(p.name))}${p.required ? ' *' : ''}`, p.description,
+        'background:#ddf4ff;color:#0969da;border:1px solid #54aeff')).join('') || '—';
+    }
+
+    document.getElementById('graph-meta').innerHTML =
+        cell('Spec',        esc(specVersion(pb)))
+      + (pb.version ? cell('Template', 'v' + esc(pb.version)) : '')
+      + cell('Steps',       Object.keys(c.workflow || {}).length)
+      + cell('Entry step',  `<code style="font-size:.7rem">${esc(c.workflow_start || '—')}</code>`)
+      + cell('Playbook types', types)
+      + `<div class="col-12 col-md-9">
+           <div class="text-muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.4px">${paramsTitle}</div>
+           <div class="mt-1">${paramsHtml}</div>
+         </div>`;
+  }
+
+  return { render, stepDetailHtml, escWithParams, paramLabel, openModal, specVersion };
 })();

@@ -29,13 +29,13 @@ const GROUPS = [
 ];
 
 const INTEGRATIONS = [
-  { group: 'SOAR Platform',     key: 'shuffle',   icon: 'bi-shuffle',               label: 'Shuffle',        urlKey: 'url'      },
-  { group: 'Database',          key: 'mongodb',   icon: 'bi-database',              label: 'MongoDB',        urlKey: null       },
-  { group: 'Messaging Brokers', key: 'kafka',     icon: 'bi-lightning-charge-fill', label: 'Kafka',          urlKey: 'broker'   },
-  { group: 'Messaging Brokers', key: 'nats',      icon: 'bi-arrow-left-right',      label: 'NATS',           urlKey: 'url'      },
-  { group: 'LLM Providers',     key: 'anthropic', icon: 'bi-cpu',                   label: 'Anthropic',      urlKey: 'provider' },
-  { group: 'LLM Providers',     key: 'openai',    icon: 'bi-cpu',                   label: 'OpenAI',         urlKey: 'provider' },
-  { group: 'LLM Providers',     key: 'ollama',    icon: 'bi-pc-display',            label: 'Ollama (local)', urlKey: 'provider' },
+  { group: 'SOAR Platform',     key: 'shuffle',   label: 'Shuffle',        urlKey: 'url'      },
+  { group: 'Database',          key: 'mongodb',   label: 'MongoDB',        urlKey: 'url'      },
+  { group: 'Messaging Brokers', key: 'kafka',     label: 'Kafka',          urlKey: 'broker'   },
+  { group: 'Messaging Brokers', key: 'nats',      label: 'NATS',           urlKey: 'url'      },
+  { group: 'LLM Providers',     key: 'anthropic', label: 'Anthropic',      urlKey: 'provider' },
+  { group: 'LLM Providers',     key: 'openai',    label: 'OpenAI',         urlKey: 'provider' },
+  { group: 'LLM Providers',     key: 'ollama',    label: 'Ollama (local)', urlKey: 'provider' },
 ];
 
 /* One section per group: heading (+ "n of m connected" once loaded) and a row of cards */
@@ -75,7 +75,7 @@ function skeletonCards() {
 }
 
 function renderCards(data) {
-  return renderGroups(({ key, icon, label, urlKey }) => {
+  return renderGroups(({ key, label, urlKey }) => {
     const info  = data[key] || { status: 'unknown' };
     const { status, latency_ms, error } = info;
     const addr  = urlKey ? (info[urlKey] || '') : '';
@@ -103,7 +103,6 @@ function renderCards(data) {
                 ${addr ? `<div class="text-muted font-monospace small mb-1">${addr}</div>` : ''}
                 ${detail}
               </div>
-              <i class="bi ${icon} fs-2 text-secondary opacity-25 ms-2"></i>
             </div>
           </div>
         </div>

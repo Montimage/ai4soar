@@ -39,18 +39,24 @@
             </button>
           </div>
         </div>
-        <div class="card-body pb-2">
+        <!-- flex-grow-0: Bootstrap's card-body stretches to fill the card, which pushed
+             the Raw JSON row to the bottom of the (tall) card -->
+        <div class="card-body pb-2 flex-grow-0">
           <dl class="row mb-0 small" id="alert-meta"></dl>
         </div>
-        <div class="px-3 pb-2">
+        <div class="px-3 pb-2 d-flex align-items-center gap-2">
           <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
              data-bs-toggle="collapse" data-bs-target="#raw-json-collapse">
             <i class="bi bi-code-slash me-1"></i>Raw JSON
           </a>
+          <button class="btn btn-link btn-sm text-muted p-0 ms-auto text-decoration-none"
+                  onclick="copyRawJson(this)" title="Copy the alert JSON">
+            <i class="bi bi-clipboard me-1"></i>Copy
+          </button>
         </div>
         <div class="collapse" id="raw-json-collapse">
           <div class="px-3 pb-3">
-            <pre class="json-viewer" id="raw-json"></pre>
+            <pre class="json-viewer json-viewer-fit" id="raw-json"></pre>
           </div>
         </div>
       </div>
@@ -110,12 +116,16 @@
     </div>
   </div>
 </div>
+{% include "_cacao_graph_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('web.static', filename='js/cacao_graph.js') }}"></script>
 <script>
 /* ── Load alert from localStorage ── */
 let selectedAlert  = null;
+let recPlaybooks   = [];   // last recommendation, for the workflow modal
+const LAST_RESULT_KEY = 'ai4soar_last_orch';   // see saveLastResult()
 let selectedSource = null;
 
 (function init() {
@@ -126,8 +136,36 @@ let selectedSource = null;
     selectedAlert  = alert;
     selectedSource = source;
     renderAlertPanel();
+    restoreLastResult();
   } catch (_) {}
 })();
+
+/* The last orchestration result is kept with the alert it belongs to, so coming back
+   to this page shows it again instead of re-running the (paid) LLM call. */
+function saveLastResult(result) {
+  try {
+    localStorage.setItem(LAST_RESULT_KEY, JSON.stringify({
+      alert: JSON.stringify(selectedAlert), result, at: Date.now(),
+    }));
+  } catch (_) { /* storage full or blocked: not fatal */ }
+}
+
+function restoreLastResult() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(LAST_RESULT_KEY) || 'null'); } catch (_) { return; }
+  if (!saved || saved.alert !== JSON.stringify(selectedAlert)) return;
+  hide('orch-idle');
+  renderOrchResult(saved.result);
+  const at = new Date(saved.at);
+  const when = at.toDateString() === new Date().toDateString()
+    ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : at.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+  document.getElementById('orch-result').insertAdjacentHTML('afterbegin', `
+    <div class="text-muted small mb-2" id="orch-saved-note">
+      <i class="bi bi-clock-history me-1"></i>Result from ${escHtml(when)} ·
+      <a href="#" class="text-decoration-none" onclick="runOrch(); return false;">run again</a>
+    </div>`);
+}
 
 /* Benchmark alerts carry a human label and a text mode; both belong in the alert
    panel so it is obvious the run is being scored against something. */
@@ -172,12 +210,20 @@ function renderAlertPanel() {
     <dt class="col-sm-4 text-muted">Dest IP</dt>
     <dd class="col-sm-8 font-monospace small">${f.dst_ip}</dd>`;
 
-  document.getElementById('raw-json').textContent =
-    JSON.stringify(selectedAlert, null, 2);
+  const rawJson = JSON.stringify(selectedAlert, null, 2);
+  document.getElementById('raw-json').textContent = rawJson;
+}
+
+function copyRawJson(btn) {
+  navigator.clipboard.writeText(document.getElementById('raw-json').textContent).then(() => {
+    btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 1500);
+  });
 }
 
 function clearSelection() {
   localStorage.removeItem('ai4soar_selected_alert');
+  localStorage.removeItem(LAST_RESULT_KEY);
   document.getElementById('orch-panel').classList.add('d-none');
   document.getElementById('orch-no-alert').classList.remove('d-none');
   selectedAlert = selectedSource = null;
@@ -195,6 +241,7 @@ async function runOrch() {
       body: JSON.stringify({ alert: selectedAlert, k: 5 }),
     });
     renderOrchResult(result);
+    saveLastResult(result);
   } catch (e) {
     document.getElementById('orch-result').innerHTML =
       `<div class="alert alert-danger">Orchestration failed: ${escHtml(e.message)}</div>`;
@@ -278,12 +325,21 @@ function renderOrchResult(r) {
       </div>
       <div class="d-flex flex-column gap-1">
         ${ranked.map((id, i) => {
-          /* Covered = the library holds a template for this technique, whether or not a
-             higher-ranked technique already contributed that same playbook. Only the
-             coverage gap is actionable, so that is the only distinction drawn. */
+          /* Covered = the library holds a template for this technique. Several techniques
+             can share one template (T1110, T1110.001 and T1110.003 all use the brute-force
+             playbook); it is recommended once, under the highest-ranked of them. */
           const covered = acted.has(id) || Boolean((r.ranked_technique_covered || [])[i]);
           const name    = techName(id, i);
-          const flag = covered
+          const pbIdx   = (r.playbooks || []).findIndex(pb =>
+            (pb.techniques || []).some(t => t === id || t === id.split('.')[0]));
+          const firstRank = pbIdx < 0 ? -1 : ranked.findIndex(other =>
+            (r.playbooks[pbIdx].techniques || []).some(t => t === other || t === other.split('.')[0]));
+          const shared  = covered && !acted.has(id) && firstRank >= 0 && firstRank < i;
+          const flag = shared
+            ? `<span class="rank-flag rank-flag-hit ms-auto flex-shrink-0" style="opacity:.7"
+                     title="Uses the same playbook as #${firstRank + 1} (${escHtml((r.playbooks[pbIdx] || {}).name || '')}), recommended once">
+                 <i class="bi bi-arrow-return-right me-1"></i>same playbook as #${firstRank + 1}</span>`
+            : covered
             ? `<span class="rank-flag rank-flag-hit ms-auto flex-shrink-0">
                  <i class="bi bi-journal-code me-1"></i>playbook</span>`
             : `<span class="rank-flag rank-flag-gap ms-auto flex-shrink-0"
@@ -331,6 +387,7 @@ function renderOrchResult(r) {
     </div>` : '';
 
   const playbooks = r.playbooks || [];
+  recPlaybooks = playbooks;
   const pbCards = playbooks.map((pb, i) => {
     const slug = `pb-${i}-${pb.id}`;
     const filled  = pb.parameters_filled  || {};
@@ -347,7 +404,8 @@ function renderOrchResult(r) {
         <span style="color:#ffb8b8">${escHtml(m)}</span>
         <span class="font-monospace" style="color:#ffffff">?</span>
       </span>`).join('');
-    const paramsSection = (filledHtml || missingHtml) ? `
+    const rejected = pb.parameters_rejected || [];
+    const paramsSection = (filledHtml || missingHtml || rejected.length) ? `
       <div class="mt-2">
         <div class="text-muted mb-1" style="font-size:.65rem;text-transform:uppercase;letter-spacing:.5px">
           <i class="bi bi-sliders me-1"></i>Parameters
@@ -355,6 +413,10 @@ function renderOrchResult(r) {
         <div class="d-flex flex-wrap">${filledHtml}${missingHtml}</div>
         ${missing.length ? `<div class="text-warning mt-1" style="font-size:.68rem">
           <i class="bi bi-exclamation-triangle me-1"></i>${missing.length} parameter(s) not found in alert IoCs
+        </div>` : ''}
+        ${rejected.length ? `<div class="text-danger mt-1" style="font-size:.68rem"
+             title="The alert value contained characters that are unsafe in a shell command; it was not used">
+          <i class="bi bi-shield-exclamation me-1"></i>Rejected unsafe value(s): ${rejected.map(escHtml).join(', ')}
         </div>` : ''}
       </div>` : '';
 
@@ -366,6 +428,10 @@ function renderOrchResult(r) {
            data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">
           <i class="bi bi-code-slash me-1"></i>View CACAO 2.0
         </a>
+        <button class="btn btn-link btn-sm text-muted p-0 ms-3 text-decoration-none" style="font-size:.75rem"
+                onclick="copyCacao(${i}, this)" title="Copy this filled-in CACAO 2.0 playbook as JSON">
+          <i class="bi bi-clipboard me-1"></i>Copy
+        </button>
         <div class="collapse mt-1" id="cacao-${slug}">
           <pre class="json-viewer" style="max-height:320px;overflow-y:auto;font-size:.7rem">${escHtml(JSON.stringify(cacaoObj, null, 2))}</pre>
         </div>
@@ -379,10 +445,26 @@ function renderOrchResult(r) {
           ${pb.description ? `<div class="text-muted" style="font-size:.75rem">${escHtml(pb.description)}</div>` : ''}
           <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
         </div>
-        <button class="btn btn-success btn-sm flex-shrink-0"
-                onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
-          <i class="bi bi-play-fill me-1"></i>Execute
-        </button>
+        <div class="d-flex gap-2 flex-shrink-0">
+          ${cacaoObj ? `<button class="btn btn-outline-primary btn-sm"
+                  onclick="CacaoGraph.openModal(recPlaybooks[${i}])"
+                  title="Workflow graph with the values filled from this alert">
+            <i class="bi bi-diagram-3 me-1"></i>View workflow
+          </button>
+          <button class="btn btn-outline-primary btn-sm" onclick="openInVerify(${i})"
+                  title="Open this filled-in playbook on the Verify page (adds the LLM semantic check)">
+            <i class="bi bi-patch-check me-1"></i>Open in Verify
+          </button>` : ''}
+          <button class="btn btn-success btn-sm"
+                  onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
+            <i class="bi bi-play-fill me-1"></i>Execute
+          </button>
+        </div>
+      </div>
+      <div class="mt-2" id="pb-verify-${i}">
+        <span class="text-muted" style="font-size:.72rem">
+          <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem"></span>Verifying…
+        </span>
       </div>
       ${paramsSection}
       ${cacaoHtml}
@@ -413,6 +495,86 @@ function renderOrchResult(r) {
           : '<div class="text-muted small">No matching playbooks found for this alert.</div>'}
     </div>`;
   show('orch-result');
+  verifyRecommended(playbooks);
+}
+
+/* ── Verify each parameterized playbook (structure, official CACAO schema, safety
+      policy; no LLM, so it is instant and free) ── */
+async function verifyRecommended(playbooks) {
+  await Promise.all(playbooks.map(async (pb, i) => {
+    const slot = document.getElementById(`pb-verify-${i}`);
+    if (!slot) return;
+    if (!pb.cacao) { slot.innerHTML = ''; return; }
+    try {
+      const optional = (pb.parameters_optional_unfilled || []).join(',');
+      const r = await apiFetch(`/verify_playbook?structural_only=true&optional_params=${encodeURIComponent(optional)}`,
+                               { method: 'POST', body: JSON.stringify(pb.cacao) });
+      slot.innerHTML = verifyBadgeHtml(r, i, pb);
+    } catch (e) {
+      slot.innerHTML = `<span class="text-danger" style="font-size:.72rem">
+        <i class="bi bi-exclamation-triangle me-1"></i>Verification failed: ${escHtml(e.message)}</span>`;
+    }
+  }));
+}
+
+function verifyBadgeHtml(r, i, pb) {
+  const all    = r.issues || [];
+  const infos  = all.filter(x => x.severity === 'info');   // optional values not filled
+  const issues = all.filter(x => x.severity !== 'info');
+  const errors = issues.filter(x => x.severity === 'error').length;
+  const warns  = issues.length - errors;
+  const score  = r.overall_score ?? 100;
+  const cls    = !r.passed ? 'danger' : issues.length ? 'warning' : 'success';
+  const icon   = !r.passed ? 'x-octagon' : issues.length ? 'exclamation-triangle' : 'patch-check';
+  const label  = !r.passed ? 'Verification failed'
+               : issues.length ? 'Verified with warnings' : 'Verified';
+  const counts = issues.length
+    ? ` · ${errors ? `${errors} error${errors > 1 ? 's' : ''}` : ''}${errors && warns ? ', ' : ''}${warns ? `${warns} warning${warns > 1 ? 's' : ''}` : ''}`
+    : '';
+  const c = r.checks || {};
+  const checksTitle = `Spec ${c.spec ?? '–'} · official schema ${c.schema ?? '–'} · structure ${c.structural ?? '–'} · safety ${c.safety ?? '–'} issue(s); LLM check not run`;
+  // Step ids are UUIDs in the parameterized playbook: show the step name instead
+  const stepName = id => ((pb.cacao.workflow || {})[id] || {}).name || id;
+  const CAT = { spec: 'Spec', schema: 'Schema', safety: 'Safety', structural: 'Structure', llm: 'LLM' };
+  const list = issues.map(x => `
+    <div class="d-flex align-items-start gap-2 mb-1" style="font-size:.72rem">
+      <span class="badge bg-${x.severity === 'error' ? 'danger' : 'warning'} flex-shrink-0">${escHtml(CAT[x.category] || x.category || '')}</span>
+      <span>${escHtml(x.description)}${x.node_id && !x.description.includes(stepName(x.node_id))
+        ? ` <span class="text-muted">(${escHtml(stepName(x.node_id))})</span>` : ''}</span>
+    </div>`).join('');
+  return `
+    <button class="btn btn-sm btn-outline-${cls} py-0 px-2" style="font-size:.72rem"
+            ${issues.length ? `data-bs-toggle="collapse" data-bs-target="#pb-verify-list-${i}"` : ''}
+            title="${escHtml(checksTitle)}">
+      <i class="bi bi-${icon} me-1"></i>${label} · ${score}/100${counts}
+      ${issues.length ? '<i class="bi bi-chevron-down ms-1"></i>' : ''}
+    </button>
+    ${infos.length ? `<a href="#" class="ms-2 text-muted text-decoration-none" style="font-size:.72rem"
+         data-bs-toggle="collapse" data-bs-target="#pb-verify-info-${i}"
+         title="Optional parameters the alert had no value for; the steps using them have nothing to act on">
+         <i class="bi bi-info-circle me-1"></i>${infos.length} optional value${infos.length > 1 ? 's' : ''} not filled</a>` : ''}
+    ${issues.length ? `<div class="collapse mt-2" id="pb-verify-list-${i}">${list}</div>` : ''}
+    ${infos.length ? `<div class="collapse mt-2 text-muted" id="pb-verify-info-${i}" style="font-size:.72rem">
+       ${infos.map(x => `<div><i class="bi bi-dot"></i>${escHtml(x.description)}</div>`).join('')}</div>` : ''}`;
+}
+
+function copyCacao(i, btn) {
+  const pb = recPlaybooks[i];
+  if (!pb || !pb.cacao) return;
+  navigator.clipboard.writeText(JSON.stringify(pb.cacao, null, 2)).then(() => {
+    btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 1500);
+  });
+}
+
+function openInVerify(i) {
+  const pb = recPlaybooks[i];
+  if (!pb || !pb.cacao) return;
+  try {
+    localStorage.setItem('ai4soar_verify_playbook', JSON.stringify({
+      name: pb.name || pb.id, cacao: pb.cacao, optional: pb.parameters_optional_unfilled || [] }));
+  } catch (_) {}
+  window.location.href = '/ui/verify';
 }
 
 /* ── Shuffle modal ── */

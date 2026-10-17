@@ -22,39 +22,7 @@
 
 <div class="row g-3" id="pb-grid"></div>
 
-<!-- ── Workflow graph modal ── -->
-<div class="modal fade" id="graphModal" tabindex="-1">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <div>
-          <h6 class="modal-title mb-0" id="graph-title"></h6>
-          <code class="text-muted" style="font-size:.68rem" id="graph-id"></code>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="row g-3">
-          <!-- Graph and step detail are the same box: equal width, equal height.
-               The graph scales to fit its box; the detail scrolls when it is long. -->
-          <div class="col-12 col-lg-6">
-            <div class="border rounded p-2" id="graph-canvas"
-                 style="background:#f6f8fa;height:62vh;overflow:hidden"></div>
-          </div>
-          <div class="col-12 col-lg-6">
-            <div class="border rounded p-3" id="graph-detail"
-                 style="height:62vh;overflow:auto"></div>
-          </div>
-        </div>
-
-        <!-- Playbook-level metadata -->
-        <div class="mt-3 pt-3 border-top">
-          <div class="row g-3" id="graph-meta" style="font-size:.78rem"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "_cacao_graph_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
@@ -259,69 +227,10 @@ function specVersion(pb) {
            : 'CACAO 2.0';
 }
 
-/* ── Workflow graph modal ── */
-let graphPlaybook = null;
-
+/* ── Workflow graph modal (shared, see cacao_graph.js) ── */
 function openGraph(pbId) {
   const pb = allPlaybooks.find(p => p.id === pbId);
-  if (!pb) return;
-  graphPlaybook = pb;
-
-  document.getElementById('graph-title').textContent = pb.name || pb.id;
-  document.getElementById('graph-id').textContent    = pb.id;
-
-  const { svg, order } = CacaoGraph.render(pb.cacao || {});
-  const canvas = document.getElementById('graph-canvas');
-  canvas.innerHTML = svg;
-
-  canvas.querySelectorAll('.cacao-node').forEach(node => {
-    node.addEventListener('click', () => selectStep(node.dataset.step));
-  });
-
-  renderGraphMeta(pb);
-  // Open on the entry step so the panel is never empty.
-  selectStep((pb.cacao || {}).workflow_start || order[0]);
-
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('graphModal')).show();
-}
-
-function selectStep(stepId) {
-  if (!graphPlaybook || !stepId) return;
-  document.getElementById('graph-detail').innerHTML =
-    CacaoGraph.stepDetailHtml(graphPlaybook.cacao || {}, stepId);
-  document.querySelectorAll('#graph-canvas .cacao-node').forEach(n => {
-    n.classList.toggle('cacao-node-active', n.dataset.step === stepId);
-  });
-}
-
-function renderGraphMeta(pb) {
-  const c = pb.cacao || {};
-  const params = (pb.parameters || []);
-  const cell = (label, value) => `
-    <div class="col-6 col-md-3">
-      <div class="text-muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.4px">${label}</div>
-      <div>${value}</div>
-    </div>`;
-
-  const types = (c.playbook_types || []).map(t =>
-    `<span class="badge bg-secondary me-1" style="font-size:.62rem">${escHtml(t)}</span>`).join('') || '—';
-  const steps = Object.keys(c.workflow || {}).length;
-  const paramBadges = params.map(p =>
-    `<span class="badge me-1 mb-1" style="font-size:.62rem;background:#ddf4ff;color:#0969da;border:1px solid #54aeff"
-           title="${escHtml(p.description || '')}">${escHtml(CacaoGraph.paramLabel(p.name))}${p.required ? ' *' : ''}</span>`
-  ).join('') || '—';
-
-  document.getElementById('graph-meta').innerHTML =
-      cell('Spec',        escHtml(specVersion(pb)))
-    + cell('Template',    'v' + escHtml(pb.version))
-    + cell('Steps',       steps)
-    + cell('Entry step',  `<code style="font-size:.7rem">${escHtml(c.workflow_start || '—')}</code>`)
-    + cell('Playbook types', types)
-    + `<div class="col-12 col-md-9">
-         <div class="text-muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.4px">
-           Parameters substituted into the commands (* required)</div>
-         <div class="mt-1">${paramBadges}</div>
-       </div>`;
+  if (pb) CacaoGraph.openModal(pb);
 }
 
 function copyCacao(btn) {
