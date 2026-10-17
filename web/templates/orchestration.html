@@ -436,10 +436,7 @@ async function openShuffleModal(recId, recName) {
   }
 }
 
-let _shuffleApiBase = '';
-
 function renderShuffleOpen(cfg, recName) {
-  _shuffleApiBase = (cfg.ui_url || '').replace(/\/$/, '') + '/api/v1';
   const url = cfg.default_workflow_url || cfg.ui_url + '/workflows';
   const wid = cfg.default_workflow_id || '';
   document.getElementById('shuffle-body').innerHTML = `
@@ -465,7 +462,7 @@ function renderShuffleOpen(cfg, recName) {
       </div>
       <div class="input-group input-group-sm mb-2">
         <input type="text" id="shuffle-exec-input" class="form-control font-monospace"
-               placeholder="http://localhost:3001/workflows/…?execution_id=… or just the UUID">
+               placeholder="${escHtml((cfg.ui_url || '').replace(/\/$/, ''))}/workflows/…?execution_id=… or just the UUID">
         <button class="btn btn-outline-info" onclick="fetchShuffleResults()">
           <i class="bi bi-arrow-clockwise me-1"></i>Fetch Results
         </button>
@@ -485,21 +482,8 @@ async function fetchShuffleResults() {
     <span class="spinner-border spinner-border-sm text-info me-1"></span>
     <small class="text-muted">Fetching results…</small></div>`;
 
-  if (_shuffleApiBase) {
-    try {
-      const resp = await fetch(`${_shuffleApiBase}/streams/${encodeURIComponent(execId)}`, { credentials: 'include' });
-      if (resp.ok) { renderShuffleResults(area, await resp.json()); return; }
-      const resp2 = await fetch(`${_shuffleApiBase}/streams/results`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ execution_id: execId }),
-      });
-      if (resp2.ok) { renderShuffleResults(area, await resp2.json()); return; }
-    } catch (corsErr) {
-      console.warn('Browser-direct blocked, trying backend proxy:', corsErr);
-    }
-  }
-
+  // Always via the AI4SOAR backend: it holds the Shuffle API token, and Shuffle runs on
+  // another origin, so a direct browser call would be cross-site.
   try {
     const data = await apiFetch(`/shuffle/results/${encodeURIComponent(execId)}`);
     renderShuffleResults(area, data);

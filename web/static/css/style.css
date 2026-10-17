@@ -262,3 +262,9 @@ code { color: #0969da; background: #eaeef2; padding: 1px 5px; border-radius: 4px
 .tactic-impact               { background:#fff1f2 !important; color:#881337 !important; border:1px solid #fb7185 !important; }
 .tactic-initial-access       { background:#fff7ed !important; color:#7c2d12 !important; border:1px solid #fb923c !important; }
 
+
+/* Alerts → Live tabs: the default topic is a light placeholder, not a value */
+.topic-input::placeholder { color: #b8bec5; opacity: 1; }
+
+/* Alerts → Live tabs: read-only broker field sized to its address (size attr set in JS) */
+.input-group > .form-control.broker-input { flex: 0 0 auto; width: auto; }

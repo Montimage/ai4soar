@@ -13,7 +13,7 @@
 </div>
 
 <!-- Integration cards -->
-<div class="row g-3 mb-4" id="integration-cards">
+<div class="mb-4" id="integration-cards">
   <!-- populated by JS -->
 </div>
 
@@ -21,16 +21,46 @@
 
 {% block scripts %}
 <script>
-const INTEGRATIONS = [
-  { key: 'shuffle', icon: 'bi-shuffle',               label: 'Shuffle SOAR',  urlKey: 'url'      },
-  { key: 'mongodb', icon: 'bi-database',              label: 'MongoDB',       urlKey: null       },
-  { key: 'kafka',   icon: 'bi-lightning-charge-fill', label: 'Kafka Broker',  urlKey: 'broker'   },
-  { key: 'nats',    icon: 'bi-arrow-left-right',      label: 'NATS Broker',   urlKey: 'url'      },
-  { key: 'llm',     icon: 'bi-cpu',                   label: 'LLM',           urlKey: 'provider' },
+const GROUPS = [
+  { title: 'SOAR Platform',     icon: 'bi-diagram-3' },
+  { title: 'Database',          icon: 'bi-database' },
+  { title: 'Messaging Brokers', icon: 'bi-broadcast' },
+  { title: 'LLM Providers',     icon: 'bi-cpu' },
 ];
 
+const INTEGRATIONS = [
+  { group: 'SOAR Platform',     key: 'shuffle',   icon: 'bi-shuffle',               label: 'Shuffle',        urlKey: 'url'      },
+  { group: 'Database',          key: 'mongodb',   icon: 'bi-database',              label: 'MongoDB',        urlKey: null       },
+  { group: 'Messaging Brokers', key: 'kafka',     icon: 'bi-lightning-charge-fill', label: 'Kafka',          urlKey: 'broker'   },
+  { group: 'Messaging Brokers', key: 'nats',      icon: 'bi-arrow-left-right',      label: 'NATS',           urlKey: 'url'      },
+  { group: 'LLM Providers',     key: 'anthropic', icon: 'bi-cpu',                   label: 'Anthropic',      urlKey: 'provider' },
+  { group: 'LLM Providers',     key: 'openai',    icon: 'bi-cpu',                   label: 'OpenAI',         urlKey: 'provider' },
+  { group: 'LLM Providers',     key: 'ollama',    icon: 'bi-pc-display',            label: 'Ollama (local)', urlKey: 'provider' },
+];
+
+/* One section per group: heading (+ "n of m connected" once loaded) and a row of cards */
+function renderGroups(cardHtml, data) {
+  return GROUPS.map(({ title, icon }) => {
+    const items = INTEGRATIONS.filter(i => i.group === title);
+    let summary = '';
+    if (data) {
+      const ok = items.filter(i => (data[i.key] || {}).status === 'ok').length;
+      summary = `<span class="text-muted small ms-2">${ok} of ${items.length} connected</span>`;
+    }
+    return `
+      <div class="mb-4">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi ${icon} text-secondary me-2"></i>
+          <span class="text-uppercase fw-semibold small text-secondary" style="letter-spacing:.05em">${title}</span>
+          ${summary}
+        </div>
+        <div class="row g-3">${items.map(cardHtml).join('')}</div>
+      </div>`;
+  }).join('');
+}
+
 function skeletonCards() {
-  return INTEGRATIONS.map(({ label }) => `
+  return renderGroups(({ label }) => `
     <div class="col-12 col-md-6 col-xl-4">
       <div class="card h-100">
         <div class="card-body">
@@ -41,11 +71,11 @@ function skeletonCards() {
           <small class="text-muted">Checking…</small>
         </div>
       </div>
-    </div>`).join('');
+    </div>`);
 }
 
 function renderCards(data) {
-  return INTEGRATIONS.map(({ key, icon, label, urlKey }) => {
+  return renderGroups(({ key, icon, label, urlKey }) => {
     const info  = data[key] || { status: 'unknown' };
     const { status, latency_ms, error } = info;
     const addr  = urlKey ? (info[urlKey] || '') : '';
@@ -53,9 +83,9 @@ function renderCards(data) {
 
     let detail;
     if (status === 'ok')
-      detail = `<span class="text-success small"><i class="bi bi-check-circle me-1"></i>${latency_ms} ms</span>`;
+      detail = `<span class="text-success small"><i class="bi bi-check-circle me-1"></i>${latency_ms != null ? latency_ms + ' ms' : 'OK'}</span>`;
     else if (status === 'not_configured')
-      detail = `<span class="text-muted small">Not configured</span>`;
+      detail = `<span class="text-muted small" title="${error || ''}">${(error || 'Not configured').substring(0, 55)}</span>`;
     else
       detail = `<span class="text-danger small" title="${error || ''}">${(error || 'unreachable').substring(0, 55)}</span>`;
 
@@ -68,6 +98,7 @@ function renderCards(data) {
                 <div class="d-flex align-items-center gap-2 mb-1">
                   <span class="${dotCls}"></span>
                   <span class="fw-semibold">${label}</span>
+                  ${info.active ? '<span class="badge rounded-pill text-bg-success" style="font-size:.65rem">active</span>' : ''}
                 </div>
                 ${addr ? `<div class="text-muted font-monospace small mb-1">${addr}</div>` : ''}
                 ${detail}
@@ -77,7 +108,7 @@ function renderCards(data) {
           </div>
         </div>
       </div>`;
-  }).join('');
+  }, data);
 }
 
 async function loadHealth() {

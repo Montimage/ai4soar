@@ -37,35 +37,40 @@
   <!-- ── Kafka tab ── -->
   <div class="tab-pane fade" id="tab-kafka" role="tabpanel">
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-      <button class="btn btn-sm btn-outline-warning" onclick="fetchKafkaAlert()">
-        <i class="bi bi-arrow-down-circle me-1"></i>Fetch Next
+      <button class="btn btn-sm btn-outline-primary" id="kafka-connect-btn" onclick="toggleKafka()">
+        <i class="bi bi-broadcast me-1"></i>Connect
       </button>
       <button class="btn btn-sm btn-outline-secondary" onclick="clearAlerts('kafka')" title="Clear">
         <i class="bi bi-trash"></i>
       </button>
       <span class="text-muted small" id="kafka-count">0 alerts</span>
       <span class="text-muted small">·</span>
-      <div class="input-group input-group-sm" style="width:200px">
-        <span class="input-group-text text-muted" style="font-size:.7rem">topic</span>
-        <input type="text" id="kafka-topic-display" class="form-control font-monospace"
-               style="font-size:.72rem" readonly
-               value="ai4soar.sc1.1.triage" title="Topic resolved from scenario">
+      <div class="d-flex align-items-center gap-1">
+        <span class="status-dot status-not_configured" id="kafka-status-dot"></span>
+        <span class="text-muted small" id="kafka-status-text">Disconnected</span>
       </div>
-      <select class="form-select form-select-sm w-auto"
-              id="scenario-select" onchange="updateKafkaTopic()">
-        <option value="sc1">sc1</option>
-        <option value="sc2">sc2</option>
-        <option value="sc3">sc3</option>
-      </select>
-      <span class="text-muted small">of Kafka</span>
-      <div id="kafka-loading" class="d-none ms-1">
-        <span class="spinner-border spinner-border-sm text-warning me-1"></span>
-        <small class="text-muted">Fetching…</small>
+      <span class="text-muted small">·</span>
+      <div class="input-group input-group-sm" style="width:280px">
+        <span class="input-group-text text-muted">topic</span>
+        <input type="text" id="kafka-topic" class="form-control font-monospace topic-input"
+               placeholder="ai4soar.alerts"
+               title="Kafka topic to subscribe to (empty = the grey default)">
+      </div>
+      <input type="checkbox" class="btn-check" id="kafka-from-beginning" autocomplete="off">
+      <label class="btn btn-sm btn-outline-secondary" for="kafka-from-beginning"
+             title="Replay every message already in the topic, then follow new ones">
+        <i class="bi bi-skip-backward me-1"></i>From beginning
+      </label>
+      <div class="input-group input-group-sm w-auto">
+        <span class="input-group-text text-muted">broker</span>
+        <input type="text" id="kafka-broker" class="form-control font-monospace text-muted broker-input"
+               value="…" readonly tabindex="-1"
+               title="Set with KAFKA_BROKERS in .env">
       </div>
     </div>
     <div id="kafka-empty" class="text-center py-5 text-muted">
       <i class="bi bi-lightning fs-1 d-block mb-2 opacity-25"></i>
-      Click <strong>Fetch Next</strong> to pull an alert from the Kafka triage topic.
+      <span id="kafka-empty-text">Click <strong>Connect</strong> to subscribe to the Kafka topic.</span>
     </div>
     <div class="table-responsive d-none" id="kafka-table-wrap">
       <table class="table table-hover table-bordered align-middle mb-0" id="kafka-table">
@@ -89,7 +94,7 @@
   <!-- ── NATS Live tab ── -->
   <div class="tab-pane fade" id="tab-nats" role="tabpanel">
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-      <button class="btn btn-sm btn-outline-success" id="nats-connect-btn" onclick="toggleNats()">
+      <button class="btn btn-sm btn-outline-primary" id="nats-connect-btn" onclick="toggleNats()">
         <i class="bi bi-broadcast me-1"></i>Connect
       </button>
       <button class="btn btn-sm btn-outline-secondary" onclick="clearAlerts('nats')" title="Clear">
@@ -102,13 +107,17 @@
         <span class="text-muted small" id="nats-status-text">Disconnected</span>
       </div>
       <span class="text-muted small">·</span>
-      <div class="input-group input-group-sm" style="width:220px">
-        <span class="input-group-text text-muted" style="font-size:.7rem">topic</span>
-        <input type="text" id="nats-topic" class="form-control font-monospace"
-               style="font-size:.72rem" value="ai4soar.alerts" placeholder="ai4soar.alerts"
-               title="NATS subject to subscribe to">
+      <div class="input-group input-group-sm" style="width:280px">
+        <span class="input-group-text text-muted">topic</span>
+        <input type="text" id="nats-topic" class="form-control font-monospace topic-input"
+               placeholder="ai4soar.alerts"
+               title="NATS subject to subscribe to (empty = the grey default)">
       </div>
-      <span class="text-muted small">of NATS</span>
+      <div class="input-group input-group-sm w-auto">
+        <span class="input-group-text text-muted">broker</span>
+        <input type="text" id="nats-broker" class="form-control font-monospace text-muted broker-input"
+               value="…" readonly tabindex="-1" title="Set with NATS_HOST / NATS_PORT in .env">
+      </div>
     </div>
     <div id="nats-empty" class="text-center py-5 text-muted">
       <i class="bi bi-broadcast fs-1 d-block mb-2 opacity-25"></i>
@@ -283,10 +292,13 @@ function toggleNats() {
 
 function connectNats() {
   if (_natsES) return;
-  const subject = (document.getElementById('nats-topic').value.trim() || 'ai4soar.alerts');
+  const field = document.getElementById('nats-topic');
+  const subject = field.value.trim() || field.placeholder;
+  field.value = subject;   // show what is actually subscribed
   _natsES = new EventSource(`/api/nats_stream?subject=${encodeURIComponent(subject)}`);
 
   setNatsStatus('connecting', 'Connecting…');
+  field.disabled = true;
   document.getElementById('nats-connect-btn').innerHTML =
     '<i class="bi bi-stop-circle me-1"></i>Disconnect';
 
@@ -312,6 +324,7 @@ function connectNats() {
 function disconnectNats() {
   if (_natsES) { _natsES.close(); _natsES = null; }
   setNatsStatus('not_configured', 'Disconnected');
+  document.getElementById('nats-topic').disabled = false;
   document.getElementById('nats-connect-btn').innerHTML =
     '<i class="bi bi-broadcast me-1"></i>Connect';
 }
@@ -357,29 +370,100 @@ function renderNatsTable(alerts) {
   }).join('');
 }
 
+/* Read-only broker field, widened to show the whole address */
+function setBroker(id, text) {
+  const el = document.getElementById(id);
+  el.value = text;
+  el.size = Math.max(12, text.length + 1);
+}
+
+async function loadNatsConfig() {
+  try {
+    const cfg = await apiFetch('/nats/config');
+    setBroker('nats-broker', cfg.url);
+  } catch (_) { /* non-fatal */ }
+}
+loadNatsConfig();
+
 /* Disconnect SSE when leaving tab */
 document.getElementById('tab-nats-btn').addEventListener('hide.bs.tab', () => {
   if (_natsES) disconnectNats();
 });
 
-/* ── Kafka ── */
-async function fetchKafkaAlert() {
-  const scenario = document.getElementById('scenario-select').value;
-  setLoading('kafka', true);
+/* ── Kafka Live (SSE) ── */
+let _kafkaES = null;
+
+async function loadKafkaConfig() {
   try {
-    const data = await apiFetch(`/consume_alerts?scenario=${scenario}`);
-    if (data.status === 'success' && data.message) {
-      kafkaAlerts.unshift(data.message);
-      renderTable('kafka', kafkaAlerts);
-    } else {
-      showToast('No messages available on this Kafka topic.', 'warning');
+    const cfg = await apiFetch('/kafka/config');
+    setBroker('kafka-broker', cfg.configured ? cfg.brokers : 'not configured');
+    if (cfg.default_topic) document.getElementById('kafka-topic').placeholder = cfg.default_topic;
+    if (!cfg.configured) {
+      document.getElementById('kafka-connect-btn').disabled = true;
+      document.getElementById('kafka-empty-text').innerHTML =
+        'Kafka is not configured. Set <code>KAFKA_BROKERS</code> in <code>.env</code> and restart AI4SOAR.';
     }
-  } catch (e) {
-    showToast('Kafka error: ' + e.message, 'error');
-  } finally {
-    setLoading('kafka', false);
-  }
+  } catch (_) { /* non-fatal */ }
 }
+
+function toggleKafka() {
+  if (_kafkaES) disconnectKafka(); else connectKafka();
+}
+
+function connectKafka() {
+  if (_kafkaES) return;
+  const field = document.getElementById('kafka-topic');
+  const topic = field.value.trim() || field.placeholder;
+  if (!/^[A-Za-z0-9._-]{1,249}$/.test(topic)) {
+    showToast('Invalid topic name: letters, digits, ".", "_" and "-" only.', 'warning');
+    return;
+  }
+  field.value = topic;     // show what is actually subscribed
+  const from = document.getElementById('kafka-from-beginning').checked ? 'beginning' : 'latest';
+  _kafkaES = new EventSource(`/api/kafka_stream?topic=${encodeURIComponent(topic)}&from=${from}`);
+  setKafkaStatus('connecting', 'Connecting…');
+  document.getElementById('kafka-topic').disabled = true;
+  document.getElementById('kafka-from-beginning').disabled = true;
+  document.getElementById('kafka-connect-btn').innerHTML =
+    '<i class="bi bi-stop-circle me-1"></i>Disconnect';
+
+  _kafkaES.onmessage = function(e) {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === 'connected') return;
+    if (msg.type === 'live')  { setKafkaStatus('ok', 'Live'); return; }
+    if (msg.type === 'error') {
+      disconnectKafka();
+      setKafkaStatus('error', 'Error');
+      showToast('Kafka: ' + msg.message, 'error');
+      return;
+    }
+    const alert = msg.alert || msg;
+    kafkaAlerts.unshift(alert);
+    if (kafkaAlerts.length > 500) kafkaAlerts.length = 500;
+    renderTable('kafka', kafkaAlerts);
+  };
+  _kafkaES.onerror = function() { setKafkaStatus('error', 'Reconnecting…'); };
+}
+
+function disconnectKafka() {
+  if (_kafkaES) { _kafkaES.close(); _kafkaES = null; }
+  setKafkaStatus('not_configured', 'Disconnected');
+  document.getElementById('kafka-topic').disabled = false;
+  document.getElementById('kafka-from-beginning').disabled = false;
+  document.getElementById('kafka-connect-btn').innerHTML =
+    '<i class="bi bi-broadcast me-1"></i>Connect';
+}
+
+function setKafkaStatus(dotStatus, text) {
+  document.getElementById('kafka-status-dot').className = `status-dot status-${dotStatus}`;
+  document.getElementById('kafka-status-text').textContent = text;
+}
+
+document.getElementById('tab-kafka-btn').addEventListener('hide.bs.tab', () => {
+  if (_kafkaES) disconnectKafka();
+});
+loadKafkaConfig();
 
 /* ── Historical — server-side pagination / sort / search ── */
 
@@ -721,12 +805,6 @@ function deleteAlert(idx, source, event) {
   arr.splice(idx, 1);
   if (source === 'kafka') renderTable('kafka', kafkaAlerts);
   else renderNatsTable(natsAlerts);
-}
-
-/* ── Kafka topic display helper ── */
-function updateKafkaTopic() {
-  const sc = document.getElementById('scenario-select').value;
-  document.getElementById('kafka-topic-display').value = `ai4soar.${sc}.1.triage`;
 }
 
 /* ── (Orchestration logic lives in orchestration.html) ── */
