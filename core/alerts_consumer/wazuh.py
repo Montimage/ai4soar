@@ -14,6 +14,7 @@ wazuh_config = config.wazuh
 wazuh_servers = wazuh_config.servers
 credentials = wazuh_config.credentials
 endpoint = wazuh_config.endpoint
+agent_ips = wazuh_config.agent_ips
 
 # Headers for the request
 headers = {
@@ -41,7 +42,7 @@ query_params_uc1 = {
     "query": {
         "bool": {
             "must": [
-                {"match": {"agent.ip": "192.168.21.231"}},
+                *([{"match": {"agent.ip": agent_ips['uc1']}}] if agent_ips['uc1'] else []),
                 {"match": {"predecoder.program_name": "sshd"}},
                 {"match": {"rule.groups": "sshd"}},
                 #{"match": {"@timestamp": "2024-08-02T08:49:14.522+0000"}}
@@ -61,7 +62,7 @@ query_params_uc3 = {
     "query": {
         "bool": {
             "must": [
-                {"match": {"agent.ip": "192.168.62.52"}},
+                *([{"match": {"agent.ip": agent_ips['uc3']}}] if agent_ips['uc3'] else []),
                 {"match": {"rule.groups": "win_evt_channel"}},
                 #{"wildcard": {"rule.description": "*pass-the-hash*"}},
                 {"wildcard": {"rule.description": "*Remote Desktop Connection (RDP)*"}},
@@ -73,7 +74,8 @@ query_params_uc3 = {
 def fetch_alerts(usecase):
     # Select the appropriate Wazuh server, credentials, and query parameters based on the usecase
     wazuh_server = wazuh_servers.get(usecase)
-    auth = credentials.get(usecase)
+    username, password = credentials.get(usecase, ('', ''))
+    auth = HTTPBasicAuth(username, password) if username else None
 
     # Select the appropriate query parameters
     if usecase == 'uc1':
@@ -86,13 +88,18 @@ def fetch_alerts(usecase):
         print(f"Invalid usecase: {usecase}")
         return None
 
+    if not wazuh_server:
+        raise ValueError(f"Wazuh server for {usecase} is not configured "
+                         f"(set WAZUH_{usecase.upper()}_URL in .env)")
+
     # Make the request to the Wazuh API with basic authentication
     response = requests.get(
         wazuh_server + endpoint,
         headers=headers,
         json=query_params,
         auth=auth,
-        verify=False  # Disable SSL certificate verification
+        verify=wazuh_config.verify_ssl,
+        timeout=30,
     )
 
     # Check if the request was successful

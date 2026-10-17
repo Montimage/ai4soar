@@ -117,13 +117,19 @@ class ShuffleConfig:
 
 @dataclass
 class CalderaConfig:
-    """Caldera SOAR configuration"""
-    base_url: str = 'http://192.168.126.176:8888/'
-    api_key_blue: str = 'BLUEADMIN123'
-    
+    """Caldera SOAR configuration — set CALDERA_BASE_URL and CALDERA_API_KEY_BLUE in .env"""
+    base_url: str = ''
+    api_key_blue: str = ''
+
     def __post_init__(self):
         self.base_url = os.getenv('CALDERA_BASE_URL', self.base_url)
         self.api_key_blue = os.getenv('CALDERA_API_KEY_BLUE', self.api_key_blue)
+        if self.base_url and not self.base_url.endswith('/'):
+            self.base_url += '/'
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url and self.api_key_blue)
     
     @property
     def api_url(self):
@@ -141,25 +147,38 @@ class CalderaConfig:
 
 @dataclass
 class WazuhConfig:
-    """Wazuh configuration"""
+    """Wazuh configuration — one Wazuh indexer per use case, all set via .env:
+    WAZUH_<UC>_URL, WAZUH_<UC>_USERNAME, WAZUH_<UC>_PASSWORD, WAZUH_<UC>_AGENT_IP."""
+    usecases: tuple = ('uc1', 'uc2', 'uc3')
     servers: dict = None
     credentials: dict = None
+    agent_ips: dict = None
     endpoint: str = '/wazuh-alerts-*/_search'
-    
+    # 'true' (default), 'false', or a path to a CA bundle for self-signed indexers
+    verify_ssl: object = True
+
     def __post_init__(self):
         if self.servers is None:
-            self.servers = {
-                'uc1': 'https://192.168.21.35:9200',
-                'uc2': '',
-                'uc3': 'https://192.168.56.50:9200'
-            }
-        
+            self.servers = {uc: os.getenv(f'WAZUH_{uc.upper()}_URL', '') for uc in self.usecases}
+
         if self.credentials is None:
             self.credentials = {
-                'uc1': ('admin', 'SecretPassword'),
-                'uc2': ('', ''),
-                'uc3': ('admin', 'admin')
+                uc: (os.getenv(f'WAZUH_{uc.upper()}_USERNAME', ''),
+                     os.getenv(f'WAZUH_{uc.upper()}_PASSWORD', ''))
+                for uc in self.usecases
             }
+
+        if self.agent_ips is None:
+            self.agent_ips = {uc: os.getenv(f'WAZUH_{uc.upper()}_AGENT_IP', '') for uc in self.usecases}
+
+        self.endpoint = os.getenv('WAZUH_ENDPOINT', self.endpoint)
+        verify = os.getenv('WAZUH_VERIFY_SSL', 'true')
+        if verify.lower() in ('true', '1', 'yes'):
+            self.verify_ssl = True
+        elif verify.lower() in ('false', '0', 'no'):
+            self.verify_ssl = False
+        else:
+            self.verify_ssl = verify
 
 
 @dataclass

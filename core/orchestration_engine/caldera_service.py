@@ -40,6 +40,7 @@ class CalderaService:
             ValueError: If target is invalid or not available
             AI4SOARException: If execution fails
         """
+        self._require_configured()
         targets = self._get_current_targets()
         target_paw = targets.get(target)
         
@@ -57,7 +58,7 @@ class CalderaService:
         params.update(self._get_ability_params(target_paw, ability_id))
         
         try:
-            response = requests.post(url, headers=self.post_headers, json=params)
+            response = requests.post(url, headers=self.post_headers, json=params, timeout=30)
             response.raise_for_status()
             logger.info(f"Executed ability {ability_id} on target {target}")
             return response
@@ -72,8 +73,9 @@ class CalderaService:
         Returns:
             JSON string of abilities
         """
+        self._require_configured()
         try:
-            response = requests.get(f"{self.api_url}abilities", headers=self.default_headers)
+            response = requests.get(f"{self.api_url}abilities", headers=self.default_headers, timeout=30)
             response.raise_for_status()
             logger.info("Retrieved abilities list")
             return response.text
@@ -81,6 +83,11 @@ class CalderaService:
             logger.error(f"Failed to retrieve abilities: {e}")
             raise AI4SOARException(f"Failed to retrieve abilities: {e}") from e
     
+    def _require_configured(self) -> None:
+        if not self.caldera_config.is_configured:
+            raise ValueError("Caldera is not configured "
+                             "(set CALDERA_BASE_URL and CALDERA_API_KEY_BLUE in .env)")
+
     def _get_current_targets(self) -> Dict[str, Optional[str]]:
         """
         Get current target mappings with active agents.
@@ -188,12 +195,12 @@ class CalderaService:
     
     def _get_blue_agents(self) -> requests.Response:
         """Get blue team agents."""
-        return requests.get(f"{self.api_url}agents", headers=self.default_headers)
+        return requests.get(f"{self.api_url}agents", headers=self.default_headers, timeout=30)
     
     def _delete_agent(self, agent_paw: str) -> requests.Response:
         """Delete an agent."""
         url = f"{self.api_url}agents/{agent_paw}"
-        return requests.delete(url, headers=self.default_headers)
+        return requests.delete(url, headers=self.default_headers, timeout=30)
     
     def _clear_dead_agents(self, agent_list: list) -> int:
         """Clear untrusted agents."""
