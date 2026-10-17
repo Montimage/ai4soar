@@ -31,6 +31,14 @@ class KafkaPublisher:
     # Public API
     # ------------------------------------------------------------------
 
+    def publish_to_topic(self, topic: str, data: Dict[str, Any]) -> None:
+        """Publish a JSON message to any topic."""
+        try:
+            send_to_kafka(self._get_producer(), topic, data)
+            logger.info(f"Message published to '{topic}'")
+        except Exception as e:
+            raise KafkaPublishError(f"Failed to publish to '{topic}': {e}") from e
+
     def publish_alert(self, scenario: str, alert_data: Dict[str, Any]) -> None:
         """Forward a triaged alert to the triage Kafka topic for a scenario."""
         triage_topic, _, _ = ScenarioConfig.get_kafka_topics(scenario)

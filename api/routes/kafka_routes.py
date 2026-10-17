@@ -4,7 +4,9 @@ Kafka-related API routes.
 
 import logging
 import json
+import re
 from flask import request, jsonify
+from core.config import config
 from api.routes import kafka_bp
 from core.analysis_and_reporting.kafka_publisher import KafkaPublisher
 from core.alerts_consumer.kafka_consumer import KafkaAlertConsumer
@@ -15,21 +17,45 @@ logger = logging.getLogger(__name__)
 _publisher = KafkaPublisher()
 _consumer  = KafkaAlertConsumer()
 
+# Kafka's own rule for topic names
+TOPIC_RE = re.compile(r'^[A-Za-z0-9._-]{1,249}$')
+
+
+def valid_topic(topic: str) -> bool:
+    return bool(topic and TOPIC_RE.match(topic))
+
+
+@kafka_bp.route('/kafka/config', methods=['GET'])
+def kafka_config():
+    """Broker settings for the Alerts page (read-only; the broker is set in .env)."""
+    return jsonify({
+        'configured':        bool(config.kafka.bootstrap_servers),
+        'brokers':           config.kafka.brokers,
+        'security_protocol': config.kafka.security_protocol,
+        'default_topic':     config.kafka.topic,
+    }), 200
+
 
 @kafka_bp.route('/publish_alerts', methods=['POST'])
 def publish_alerts():
-    """Publish alerts to Kafka topic."""
+    """Publish an alert (JSON body) to ?topic=<name>, or to the ?scenario=<scN> triage topic."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        topic = request.args.get('topic', '').strip()
         scenario = request.args.get('scenario')
-        
-        if not scenario:
-            return jsonify({'status': 'error', 'message': 'scenario parameter is required'}), 400
-        
+
+        if not topic and not scenario:
+            return jsonify({'status': 'error', 'message': 'topic (or scenario) parameter is required'}), 400
+        if topic and not valid_topic(topic):
+            return jsonify({'status': 'error', 'message': f'Invalid topic name: {topic}'}), 400
+
         if not data:
             return jsonify({'status': 'error', 'message': 'Request body is required'}), 400
-        
-        _publisher.publish_alert(scenario.lower(), data)
+
+        if topic:
+            _publisher.publish_to_topic(topic, data)
+        else:
+            _publisher.publish_alert(scenario.lower(), data)
         return jsonify({'status': 'success', 'message': 'Alert published successfully'}), 200
         
     except ScenarioError as e:
@@ -118,13 +144,16 @@ def publish_message_to_hm():
 
 @kafka_bp.route('/consume_alerts', methods=['GET'])
 def consume_alerts():
-    """Consume alerts from Kafka topic."""
+    """Consume one alert from ?topic=<name>, or from the ?scenario=<scN> triage topic."""
     try:
+        topic = request.args.get('topic', '').strip()
         scenario = request.args.get('scenario')
-        if not scenario:
-            return jsonify({'status': 'error', 'message': 'scenario parameter is required'}), 400
-        
-        message = _consumer.consume_alerts(scenario.lower())
+        if not topic and not scenario:
+            return jsonify({'status': 'error', 'message': 'topic (or scenario) parameter is required'}), 400
+        if topic and not valid_topic(topic):
+            return jsonify({'status': 'error', 'message': f'Invalid topic name: {topic}'}), 400
+
+        message = _consumer.consume_alerts((scenario or '').lower(), topic=topic or None)
         
         if message:
             return jsonify({'status': 'success', 'message': message}), 200

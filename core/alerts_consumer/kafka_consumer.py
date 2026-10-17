@@ -16,13 +16,16 @@ logger = logging.getLogger(__name__)
 class KafkaAlertConsumer:
     """Consumes security alerts from scenario-specific Kafka triage topics."""
 
-    def consume_alerts(self, scenario: str, timeout_ms: int = 10000) -> Optional[Dict[str, Any]]:
+    def consume_alerts(self, scenario: str = None, timeout_ms: int = 10000,
+                       topic: str = None) -> Optional[Dict[str, Any]]:
         """
-        Poll one alert message from the triage topic for the given scenario.
+        Poll one alert message from `topic`, or from the scenario's triage topic.
 
         Returns the deserialized message dict, or None if the topic is empty.
         """
-        triage_topic, _, _ = ScenarioConfig.get_kafka_topics(scenario)
+        triage_topic = topic
+        if not triage_topic:
+            triage_topic, _, _ = ScenarioConfig.get_kafka_topics(scenario or '')
         if not triage_topic:
             raise ScenarioError(f"Invalid scenario: {scenario}")
 

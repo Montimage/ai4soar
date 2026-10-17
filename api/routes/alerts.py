@@ -84,6 +84,85 @@ def _ensure_nats_listener(subject: str) -> None:
 
 
 # ------------------------------------------------------------------
+# Kafka live-stream state (shared across SSE connections)
+# ------------------------------------------------------------------
+
+# Per-(topic, start) fan-out state: key → {queues: {id: Queue}, thread, state}
+_kafka_streams: dict = {}
+_kafka_streams_lock = threading.Lock()
+
+
+def _kafka_broadcast(key, payload: str) -> None:
+    with _kafka_streams_lock:
+        queues = list((_kafka_streams.get(key) or {}).get('queues', {}).values())
+    for q in queues:
+        try:
+            q.put_nowait(payload)
+        except queue.Full:
+            pass
+
+
+def _kafka_background_listener(key, topic: str, from_beginning: bool) -> None:
+    """Consume `topic` until no SSE client is left, normalising and saving each alert."""
+    from kafka import KafkaConsumer
+    consumer = None
+    try:
+        consumer = KafkaConsumer(topic, **config.kafka.get_stream_consumer_config(from_beginning))
+        logger.info(f"[Kafka] Subscribed to '{topic}' on {config.kafka.brokers}")
+        with _kafka_streams_lock:
+            _kafka_streams[key]['state'] = 'live'
+        _kafka_broadcast(key, json.dumps({'type': 'live', 'topic': topic}))
+        while True:
+            with _kafka_streams_lock:
+                if not _kafka_streams[key]['queues']:
+                    logger.info(f"[Kafka] No more clients on '{topic}', stopping consumer")
+                    return
+            for tp, messages in consumer.poll(timeout_ms=1000).items():
+                for msg in messages:
+                    raw = (msg.value or b'').decode('utf-8', errors='replace')
+                    try:
+                        normalized, _ = normalize_alert(json.loads(raw))
+                        # Stable id from the message position: replaying a topic upserts
+                        # the same MongoDB documents instead of duplicating them
+                        normalized.setdefault('_id', f"kafka-{tp.topic}-{tp.partition}-{msg.offset}")
+                        alert_service.save_alert(normalized)
+                        compact = json.dumps(normalized, default=str)
+                    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+                        compact = raw.replace('\n', ' ').replace('\r', '')
+                    _kafka_broadcast(key, compact)
+    except Exception as exc:
+        logger.warning(f"[Kafka] Listener for '{topic}' stopped: {exc}")
+        msg = (f"Cannot reach Kafka broker {config.kafka.brokers}"
+               if type(exc).__name__ == 'NoBrokersAvailable' else str(exc))
+        _kafka_broadcast(key, json.dumps({'type': 'error', 'message': msg}))
+    finally:
+        if consumer:
+            consumer.close()
+        with _kafka_streams_lock:
+            entry = _kafka_streams.get(key)
+            if entry:
+                entry['thread'] = None
+                entry['state'] = 'stopped'
+                if not entry['queues']:
+                    _kafka_streams.pop(key, None)
+
+
+def _kafka_subscribe(topic: str, from_beginning: bool, client_id: str, client_q: queue.Queue):
+    """Register a client queue and make sure a consumer thread is running. Returns its key."""
+    key = (topic, from_beginning)
+    with _kafka_streams_lock:
+        entry = _kafka_streams.setdefault(key, {'queues': {}, 'thread': None, 'state': 'connecting'})
+        entry['queues'][client_id] = client_q
+        if entry['thread'] is None:
+            entry['state'] = 'connecting'
+            entry['thread'] = threading.Thread(
+                target=_kafka_background_listener, args=(key, topic, from_beginning),
+                name=f"kafka-{topic}", daemon=True)
+            entry['thread'].start()
+        return key, entry['state']
+
+
+# ------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------
 
@@ -204,6 +283,63 @@ def delete_alert(alert_id):
     except Exception as e:
         logger.error(f"Error deleting alert {alert_id}: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@alerts_bp.route('/kafka_stream', methods=['GET'])
+def kafka_stream():
+    """
+    SSE endpoint — streams live alerts from a Kafka topic (broker from KAFKA_* in .env).
+
+    Query params:
+        topic  str   Kafka topic (default: KAFKA_TOPIC)
+        from   str   "latest" (default, new messages only) | "beginning" (replay the topic)
+
+    Events: {"type":"connected"} → {"type":"live"} → alerts…, or {"type":"error","message":…}
+    """
+    from api.routes.kafka_routes import valid_topic
+    if not config.kafka.bootstrap_servers:
+        return jsonify({'error': 'Kafka is not configured (set KAFKA_BROKERS in .env)'}), 503
+    topic = request.args.get('topic', '').strip() or config.kafka.topic
+    if not valid_topic(topic):
+        return jsonify({'error': f'Invalid topic name: {topic}'}), 400
+    from_beginning = request.args.get('from') == 'beginning'
+
+    client_id = str(uuid.uuid4())
+    client_q: queue.Queue = queue.Queue(maxsize=500)
+    key, state = _kafka_subscribe(topic, from_beginning, client_id, client_q)
+
+    def _generate():
+        try:
+            yield f"data: {json.dumps({'type': 'connected', 'topic': topic, 'brokers': config.kafka.brokers})}\n\n"
+            if state == 'live':
+                yield f"data: {json.dumps({'type': 'live', 'topic': topic})}\n\n"
+            while True:
+                try:
+                    msg = client_q.get(timeout=25)
+                    yield f"data: {msg}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _kafka_streams_lock:
+                (_kafka_streams.get(key) or {}).get('queues', {}).pop(client_id, None)
+            logger.debug(f"[Kafka SSE] client {client_id} disconnected from '{topic}'")
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@alerts_bp.route('/nats/config', methods=['GET'])
+def nats_config():
+    """NATS server shown in the Alerts page (read-only; set with NATS_HOST/NATS_PORT)."""
+    return jsonify({'url': config.nats.url}), 200
 
 
 @alerts_bp.route('/nats_stream', methods=['GET'])

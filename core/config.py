@@ -24,23 +24,62 @@ class ServerConfig:
 
 @dataclass
 class KafkaConfig:
-    """Kafka configuration"""
-    brokers: str = 'ai4-vm-01.kafka.com:9093'
-    security_protocol: str = 'SSL'
-    ssl_cafile: str = '/home/user/kafka_certs/ai4soar_CARoot.pem'
-    ssl_certfile: str = '/home/user/kafka_certs/ai4soar_certificate.pem'
-    ssl_keyfile: str = '/home/user/kafka_certs/ai4soar_RSAkey.pem'
+    """Kafka configuration — all set via .env (KAFKA_*). Empty KAFKA_BROKERS = Kafka off."""
+    brokers: str = ''
+    topic: str = 'ai4soar.alerts'              # default topic shown in the Alerts page
+    security_protocol: str = 'PLAINTEXT'       # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+    ssl_cafile: str = None
+    ssl_certfile: str = None
+    ssl_keyfile: str = None
     ssl_password: str = None
+    sasl_mechanism: str = None                 # PLAIN | SCRAM-SHA-256 | SCRAM-SHA-512
+    sasl_username: str = None
+    sasl_password: str = None
     group_id: str = 'ai4soar_group'
-    
+
     # Legacy config for backward compatibility
     legacy_broker: str = 'localhost:9092'
     legacy_topic: str = 'ai4soar_kafka_topic'
-    
+
     def __post_init__(self):
-        self.ssl_password = os.getenv('KAFKA_SSL_PASSWORD', self.ssl_password)
         self.brokers = os.getenv('KAFKA_BROKERS', self.brokers)
-    
+        self.topic = os.getenv('KAFKA_TOPIC', self.topic)
+        self.security_protocol = os.getenv('KAFKA_SECURITY_PROTOCOL', self.security_protocol).upper()
+        self.ssl_cafile = os.getenv('KAFKA_SSL_CAFILE') or self.ssl_cafile
+        self.ssl_certfile = os.getenv('KAFKA_SSL_CERTFILE') or self.ssl_certfile
+        self.ssl_keyfile = os.getenv('KAFKA_SSL_KEYFILE') or self.ssl_keyfile
+        self.ssl_password = os.getenv('KAFKA_SSL_PASSWORD') or self.ssl_password
+        self.sasl_mechanism = os.getenv('KAFKA_SASL_MECHANISM') or self.sasl_mechanism
+        self.sasl_username = os.getenv('KAFKA_SASL_USERNAME') or self.sasl_username
+        self.sasl_password = os.getenv('KAFKA_SASL_PASSWORD') or self.sasl_password
+        self.group_id = os.getenv('KAFKA_GROUP_ID', self.group_id)
+
+    @property
+    def bootstrap_servers(self):
+        return [b.strip() for b in self.brokers.split(',') if b.strip()]
+
+    def get_connection_config(self):
+        """bootstrap_servers + security settings shared by producers and consumers."""
+        cfg = {'bootstrap_servers': self.bootstrap_servers,
+               'security_protocol': self.security_protocol}
+        if 'SSL' in self.security_protocol:
+            for key in ('ssl_cafile', 'ssl_certfile', 'ssl_keyfile', 'ssl_password'):
+                if getattr(self, key):
+                    cfg[key] = getattr(self, key)
+        if self.security_protocol.startswith('SASL'):
+            cfg['sasl_mechanism'] = self.sasl_mechanism or 'PLAIN'
+            cfg['sasl_plain_username'] = self.sasl_username
+            cfg['sasl_plain_password'] = self.sasl_password
+        return cfg
+
+    def get_stream_consumer_config(self, from_beginning: bool = False):
+        """Consumer for the live Alerts view: no consumer group, so it never commits
+        offsets or takes messages away from other consumers of the same topic."""
+        return {**self.get_connection_config(),
+                'group_id': None,
+                'enable_auto_commit': False,
+                'auto_offset_reset': 'earliest' if from_beginning else 'latest'}
+
     def get_ssl_config(self):
         """Get SSL configuration dictionary"""
         return {
@@ -52,33 +91,19 @@ class KafkaConfig:
         }
     
     def get_producer_config(self):
-        """Get Kafka producer configuration"""
-        import json
-        return {
-            'bootstrap_servers': self.brokers,
-            'security_protocol': self.security_protocol,
-            'ssl_cafile': self.ssl_cafile,
-            'ssl_certfile': self.ssl_certfile,
-            'ssl_keyfile': self.ssl_keyfile,
-            'ssl_password': self.ssl_password,
-            'value_serializer': lambda v: json.dumps(v).encode('utf-8'),
-        }
-    
+        """Get Kafka producer configuration (values are sent as bytes; see send_to_kafka)"""
+        return self.get_connection_config()
+
     def get_consumer_config(self):
         """Get Kafka consumer configuration"""
         import json
         return {
-            'bootstrap_servers': self.brokers,
+            **self.get_connection_config(),
             'group_id': self.group_id,
             'auto_offset_reset': 'earliest',
-            'security_protocol': self.security_protocol,
-            'ssl_cafile': self.ssl_cafile,
-            'ssl_certfile': self.ssl_certfile,
-            'ssl_keyfile': self.ssl_keyfile,
-            'ssl_password': self.ssl_password,
             'value_deserializer': lambda m: json.loads(m.decode('utf-8')),
         }
-    
+
     def get_legacy_config(self):
         """Get legacy Kafka configuration for backward compatibility"""
         return {
