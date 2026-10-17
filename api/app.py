@@ -4,7 +4,7 @@ Main Flask application for AI4SOAR platform.
 
 import logging
 from bson import ObjectId
-from flask import Flask
+from flask import Flask, redirect
 from flask.json.provider import DefaultJSONProvider
 from core.logging_config import setup_logging
 from core.config import config
@@ -71,6 +71,8 @@ def create_app():
     
     @app.route('/', methods=['GET'])
     def index():
+        if _WEB_ENABLED:
+            return redirect('/ui/')
         return {
             'service': 'AI4SOAR',
             'version': '2.0',
