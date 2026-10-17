@@ -22,10 +22,10 @@
 {% block scripts %}
 <script>
 const GROUPS = [
-  { title: 'SOAR Platform',     icon: 'bi-diagram-3' },
-  { title: 'Database',          icon: 'bi-database' },
-  { title: 'Messaging Brokers', icon: 'bi-broadcast' },
-  { title: 'LLM Providers',     icon: 'bi-cpu' },
+  { title: 'SOAR Platform' },
+  { title: 'Database' },
+  { title: 'Messaging Brokers' },
+  { title: 'LLM Providers' },
 ];
 
 const INTEGRATIONS = [
@@ -40,7 +40,7 @@ const INTEGRATIONS = [
 
 /* One section per group: heading (+ "n of m connected" once loaded) and a row of cards */
 function renderGroups(cardHtml, data) {
-  return GROUPS.map(({ title, icon }) => {
+  return GROUPS.map(({ title }) => {
     const items = INTEGRATIONS.filter(i => i.group === title);
     let summary = '';
     if (data) {
@@ -50,7 +50,6 @@ function renderGroups(cardHtml, data) {
     return `
       <div class="mb-4">
         <div class="d-flex align-items-center mb-2">
-          <i class="bi ${icon} text-secondary me-2"></i>
           <span class="text-uppercase fw-semibold small text-secondary" style="letter-spacing:.05em">${title}</span>
           ${summary}
         </div>

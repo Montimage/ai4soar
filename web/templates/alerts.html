@@ -13,21 +13,21 @@
 <!-- Source tabs -->
 <ul class="nav nav-tabs mb-3" id="alertTabs" role="tablist">
   <li class="nav-item" role="presentation">
-    <button class="nav-link active" id="tab-hist-btn"
+    <button class="nav-link active" id="tab-hist-btn" style="font-size:.875rem"
             data-bs-toggle="tab" data-bs-target="#tab-historical" type="button" role="tab">
-      <i class="bi bi-archive-fill text-info me-1"></i>Historical (MongoDB)
+      Historical (MongoDB)
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-nats-btn"
-            data-bs-toggle="tab" data-bs-target="#tab-nats" type="button" role="tab">
-      <i class="bi bi-arrow-left-right text-success me-1"></i>Live (NATS)
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" id="tab-kafka-btn"
+    <button class="nav-link" id="tab-kafka-btn" style="font-size:.875rem"
             data-bs-toggle="tab" data-bs-target="#tab-kafka" type="button" role="tab">
-      <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Live (Kafka)
+      Live (Kafka)
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-nats-btn" style="font-size:.875rem"
+            data-bs-toggle="tab" data-bs-target="#tab-nats" type="button" role="tab">
+      Live (NATS)
     </button>
   </li>
 </ul>
@@ -52,7 +52,7 @@
       <span class="text-muted small">·</span>
       <div class="input-group input-group-sm" style="width:280px">
         <span class="input-group-text text-muted">topic</span>
-        <input type="text" id="kafka-topic" class="form-control font-monospace topic-input"
+        <input type="text" id="kafka-topic" class="form-control font-monospace"
                placeholder="ai4soar.alerts"
                title="Kafka topic to subscribe to (empty = the grey default)">
       </div>
@@ -109,7 +109,7 @@
       <span class="text-muted small">·</span>
       <div class="input-group input-group-sm" style="width:280px">
         <span class="input-group-text text-muted">topic</span>
-        <input type="text" id="nats-topic" class="form-control font-monospace topic-input"
+        <input type="text" id="nats-topic" class="form-control font-monospace"
                placeholder="ai4soar.alerts"
                title="NATS subject to subscribe to (empty = the grey default)">
       </div>
@@ -153,7 +153,7 @@
         <option value="benchmark">Benchmark (MMT / Suricata / Snort)</option>
       </select>
 
-      <div class="input-group input-group-sm" style="width:220px">
+      <div class="input-group input-group-sm" style="width:340px">
         <span class="input-group-text text-muted">
           <i class="bi bi-search"></i>
         </span>
@@ -196,13 +196,13 @@
         <option value="50">50 / page</option>
         <option value="100">100 / page</option>
       </select>
-      <button class="btn btn-sm btn-outline-info" onclick="loadHistPage(1)">
-        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-      </button>
       <span class="text-muted small ms-1" id="hist-count"></span>
       <div id="hist-loading" class="d-none ms-1">
-        <span class="spinner-border spinner-border-sm text-info"></span>
+        <span class="spinner-border spinner-border-sm text-secondary"></span>
       </div>
+      <button class="btn btn-outline-primary btn-sm ms-auto" onclick="loadHistPage(1)">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      </button>
     </div>
 
     <!-- Empty state -->
@@ -273,6 +273,8 @@
 {% block scripts %}
 <script>
 /* ── State ── */
+// Historical empty-state text (the Benchmark view temporarily replaces it)
+const HIST_EMPTY_DEFAULT = document.getElementById('hist-empty').innerHTML;
 let kafkaAlerts    = [];
 let natsAlerts     = [];
 let histAlerts     = [];
@@ -501,7 +503,7 @@ function switchHistSource() {
   document.getElementById('hist-search').placeholder = bench
     ? 'Signature, T-code, tactic…'
     : 'Search description, host, tactic…';
-  if (bench) document.getElementById('hist-pagination').style.display = 'none';
+  if (bench) showHistPager(false);
   loadHistPage(1);
 }
 
@@ -555,7 +557,7 @@ function updateHistPager() {
   if (histSource() === 'benchmark') {
     document.getElementById('hist-count').textContent =
       total ? `${total} benchmark alert${total !== 1 ? 's' : ''}` : 'none loaded';
-    document.getElementById('hist-pagination').style.display = 'none';
+    showHistPager(false);
     if (!total) {
       document.getElementById('hist-empty').innerHTML =
         '<i class="bi bi-clipboard-data fs-1 d-block mb-2 opacity-25"></i>' +
@@ -574,9 +576,15 @@ function updateHistPager() {
   document.getElementById('hist-total-pages').textContent = `of ${pages}`;
   document.getElementById('hist-prev').disabled = page <= 1;
   document.getElementById('hist-next').disabled = page >= pages;
+  showHistPager(total > 0);
+}
+
+/* The pager carries Bootstrap's d-flex (display:flex !important), so hiding it needs
+   !important too: a plain style.display = 'none' is silently overridden. */
+function showHistPager(visible) {
   const pag = document.getElementById('hist-pagination');
-  pag.style.removeProperty('display');
-  pag.style.display = total > 0 ? '' : 'none';
+  if (visible) pag.style.removeProperty('display');
+  else pag.style.setProperty('display', 'none', 'important');
 }
 
 async function loadTacticOptions() {
@@ -717,14 +725,19 @@ function tacticBadge(tactic) {
 
 function renderHistTable(alerts) {
   const empty = document.getElementById('hist-empty');
+  const wrap  = document.getElementById('hist-table-wrap');
   const tbody = document.getElementById('hist-tbody');
 
+  // Empty: the message only, without an empty table header under it
   if (!alerts.length) {
+    if (histSource() !== 'benchmark') empty.innerHTML = HIST_EMPTY_DEFAULT;
     empty.classList.remove('d-none');
+    wrap.classList.add('d-none');
     tbody.innerHTML = '';
     return;
   }
   empty.classList.add('d-none');
+  wrap.classList.remove('d-none');
 
   tbody.innerHTML = alerts.map((alert, i) => {
     const f  = extractAlertFields(alert);

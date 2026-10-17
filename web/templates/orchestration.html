@@ -4,11 +4,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0 fw-bold"><i class="bi bi-cpu text-primary me-2"></i>AI Orchestration</h4>
+    <h4 class="mb-0 fw-bold">AI Orchestration</h4>
     <small class="text-muted">3-stage recommendation engine (STIX lookup, LLM technique
       attribution + ML similarity, then CACAO 2.0 generation as a safety net)</small>
   </div>
-  <a href="/ui/alerts" class="btn btn-sm btn-outline-secondary">
+  <a href="/ui/alerts" class="btn btn-sm btn-outline-primary">
     <i class="bi bi-arrow-left me-1"></i>Back to Alerts
   </a>
 </div>
@@ -30,7 +30,7 @@
     <div class="col-12 col-lg-5">
       <div class="card h-100">
         <div class="card-header py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold small"><i class="bi bi-bell me-1 text-warning"></i>Selected Alert</span>
+          <span class="fw-semibold small">Selected Alert</span>
           <div class="d-flex gap-2">
             <span class="badge bg-secondary small" id="alert-source-badge"></span>
             <button class="btn btn-sm btn-link text-secondary p-0 text-decoration-none"
@@ -47,11 +47,11 @@
         <div class="px-3 pb-2 d-flex align-items-center gap-2">
           <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
              data-bs-toggle="collapse" data-bs-target="#raw-json-collapse">
-            <i class="bi bi-code-slash me-1"></i>Raw JSON
+            Raw JSON
           </a>
-          <button class="btn btn-link btn-sm text-muted p-0 ms-auto text-decoration-none"
+          <button class="btn btn-sm btn-outline-primary py-0 ms-auto"
                   onclick="copyRawJson(this)" title="Copy the alert JSON">
-            <i class="bi bi-clipboard me-1"></i>Copy
+            <i class="bi bi-clipboard me-1"></i>Copy JSON
           </button>
         </div>
         <div class="collapse" id="raw-json-collapse">
@@ -66,12 +66,14 @@
     <div class="col-12 col-lg-7">
       <div class="card h-100">
         <div class="card-header py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold small">
-            <i class="bi bi-diagram-3 me-1 text-primary"></i>Recommendation Engine
-          </span>
+          <span class="fw-semibold small">Recommendation Engine</span>
+          <div class="d-flex align-items-center gap-2 ms-auto">
+          <!-- "Result from HH:MM · run again" when a saved result is shown -->
+          <span class="text-muted small d-none" id="orch-saved-note"></span>
           <button class="btn btn-primary btn-sm" onclick="runOrch()" id="run-btn">
             <i class="bi bi-play-fill me-1"></i>Run Orchestration
           </button>
+          </div>
         </div>
         <div class="card-body">
           <div id="orch-idle" class="text-center py-5 text-muted">
@@ -96,7 +98,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">
-          <i class="bi bi-play-circle-fill text-success me-2"></i>Execute on Shuffle
+          Execute on Shuffle
         </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
@@ -160,11 +162,10 @@ function restoreLastResult() {
   const when = at.toDateString() === new Date().toDateString()
     ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : at.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-  document.getElementById('orch-result').insertAdjacentHTML('afterbegin', `
-    <div class="text-muted small mb-2" id="orch-saved-note">
-      <i class="bi bi-clock-history me-1"></i>Result from ${escHtml(when)} ·
-      <a href="#" class="text-decoration-none" onclick="runOrch(); return false;">run again</a>
-    </div>`);
+  const note = document.getElementById('orch-saved-note');
+  note.innerHTML = `<i class="bi bi-clock-history me-1"></i>Result from ${escHtml(when)}`;
+  note.title = 'Saved result for this alert. Run Orchestration to refresh it.';
+  note.classList.remove('d-none');
 }
 
 /* Benchmark alerts carry a human label and a text mode; both belong in the alert
@@ -217,7 +218,7 @@ function renderAlertPanel() {
 function copyRawJson(btn) {
   navigator.clipboard.writeText(document.getElementById('raw-json').textContent).then(() => {
     btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied';
-    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 1500);
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy JSON'; }, 1500);
   });
 }
 
@@ -234,6 +235,7 @@ async function runOrch() {
   if (!selectedAlert) return;
   const btn = document.getElementById('run-btn');
   btn.disabled = true;
+  document.getElementById('orch-saved-note').classList.add('d-none');   // fresh result coming
   show('orch-spinner'); hide('orch-idle'); hide('orch-result');
   try {
     const result = await apiFetch('/recommend', {
@@ -320,7 +322,7 @@ function renderOrchResult(r) {
   const rankedSection = ranked.length ? `
     <div class="mb-3">
       <div class="small text-muted mb-2">
-        <i class="bi bi-list-ol me-1"></i>LLM Technique Attribution
+        LLM Technique Attribution
         <span class="badge bg-secondary ms-1">top ${ranked.length}</span>
       </div>
       <div class="d-flex flex-column gap-1">
@@ -369,8 +371,8 @@ function renderOrchResult(r) {
 
   const llmSection = r.llm_reasoning ? `
     <div class="mt-3 mb-2">
-      <div class="small text-muted mb-1"><i class="bi bi-chat-left-text me-1"></i>LLM Reasoning</div>
-      <div class="p-2 rounded small" style="background:#1e3a2e;border-left:3px solid #3fb950;color:#acd8bc">
+      <div class="small text-muted mb-1">LLM Reasoning</div>
+      <div class="p-2 rounded small" style="background:#f6f8fa;border-left:3px solid #d0d7de;color:#24292f">
         ${escHtml(r.llm_reasoning)}
       </div>
     </div>` : '';
@@ -379,7 +381,7 @@ function renderOrchResult(r) {
     <div class="mt-2">
       <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
          data-bs-toggle="collapse" data-bs-target="#cacao-collapse">
-        <i class="bi bi-code-slash me-1"></i>Generated CACAO 2.0 Playbook
+        Generated CACAO 2.0 Playbook
       </a>
       <div class="collapse mt-2" id="cacao-collapse">
         <pre class="json-viewer">${escHtml(JSON.stringify(r.cacao_playbook, null, 2))}</pre>
@@ -394,21 +396,21 @@ function renderOrchResult(r) {
     const missing = pb.parameters_missing || [];
     const filledHtml = Object.entries(filled).map(([k, v]) => `
       <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
-            style="background:#1a4a7a;border:1px solid #4a9eff;border-radius:4px;font-size:.7rem">
-        <span style="color:#b8d4f0">${escHtml(k)}</span>
-        <span class="font-monospace" style="color:#ffffff">${escHtml(String(v))}</span>
+            style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:4px;font-size:.7rem">
+        <span class="text-muted">${escHtml(k)}</span>
+        <span class="font-monospace" style="color:#24292f">${escHtml(String(v))}</span>
       </span>`).join('');
     const missingHtml = missing.map(m => `
       <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
-            style="background:#7a1a1a;border:1px solid #ff6b6b;border-radius:4px;font-size:.7rem">
-        <span style="color:#ffb8b8">${escHtml(m)}</span>
-        <span class="font-monospace" style="color:#ffffff">?</span>
+            style="background:#ffebe9;border:1px solid #ff8182;border-radius:4px;font-size:.7rem">
+        <span style="color:#cf222e">${escHtml(m)}</span>
+        <span class="font-monospace" style="color:#cf222e">?</span>
       </span>`).join('');
     const rejected = pb.parameters_rejected || [];
     const paramsSection = (filledHtml || missingHtml || rejected.length) ? `
       <div class="mt-2">
         <div class="text-muted mb-1" style="font-size:.65rem;text-transform:uppercase;letter-spacing:.5px">
-          <i class="bi bi-sliders me-1"></i>Parameters
+          Parameters
         </div>
         <div class="d-flex flex-wrap">${filledHtml}${missingHtml}</div>
         ${missing.length ? `<div class="text-warning mt-1" style="font-size:.68rem">
@@ -423,15 +425,8 @@ function renderOrchResult(r) {
     const cacaoObj  = pb.cacao || null;
     const cacaoHtml = cacaoObj ? `
       <div class="mt-2">
-        <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
-           style="font-size:.75rem"
-           data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">
-          <i class="bi bi-code-slash me-1"></i>View CACAO 2.0
-        </a>
-        <button class="btn btn-link btn-sm text-muted p-0 ms-3 text-decoration-none" style="font-size:.75rem"
-                onclick="copyCacao(${i}, this)" title="Copy this filled-in CACAO 2.0 playbook as JSON">
-          <i class="bi bi-clipboard me-1"></i>Copy
-        </button>
+        <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
+                data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">CACAO 2.0 JSON</button>
         <div class="collapse mt-1" id="cacao-${slug}">
           <pre class="json-viewer" style="max-height:320px;overflow-y:auto;font-size:.7rem">${escHtml(JSON.stringify(cacaoObj, null, 2))}</pre>
         </div>
@@ -439,27 +434,10 @@ function renderOrchResult(r) {
 
     return `
     <div class="playbook-card mb-2">
-      <div class="d-flex justify-content-between align-items-start gap-3">
-        <div class="overflow-hidden">
-          <div class="fw-semibold small">${escHtml(pb.name || pb.id)}</div>
-          ${pb.description ? `<div class="text-muted" style="font-size:.75rem">${escHtml(pb.description)}</div>` : ''}
-          <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
-        </div>
-        <div class="d-flex gap-2 flex-shrink-0">
-          ${cacaoObj ? `<button class="btn btn-outline-primary btn-sm"
-                  onclick="CacaoGraph.openModal(recPlaybooks[${i}])"
-                  title="Workflow graph with the values filled from this alert">
-            <i class="bi bi-diagram-3 me-1"></i>View workflow
-          </button>
-          <button class="btn btn-outline-primary btn-sm" onclick="openInVerify(${i})"
-                  title="Open this filled-in playbook on the Verify page (adds the LLM semantic check)">
-            <i class="bi bi-patch-check me-1"></i>Open in Verify
-          </button>` : ''}
-          <button class="btn btn-success btn-sm"
-                  onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
-            <i class="bi bi-play-fill me-1"></i>Execute
-          </button>
-        </div>
+      <div class="overflow-hidden">
+        <div class="fw-semibold small">${escHtml(pb.name || pb.id)}</div>
+        ${pb.description ? `<div class="text-muted" style="font-size:.75rem">${escHtml(pb.description)}</div>` : ''}
+        <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
       </div>
       <div class="mt-2" id="pb-verify-${i}">
         <span class="text-muted" style="font-size:.72rem">
@@ -468,6 +446,26 @@ function renderOrchResult(r) {
       </div>
       ${paramsSection}
       ${cacaoHtml}
+      <!-- Same actions, names and styles as the Playbooks page cards -->
+      <div class="d-flex flex-wrap gap-2 mt-3 pt-2 border-top">
+        ${cacaoObj ? `<button class="btn btn-sm btn-outline-primary"
+                onclick="CacaoGraph.openModal(recPlaybooks[${i}])"
+                title="Workflow graph with the values filled from this alert">
+          <i class="bi bi-diagram-3 me-1"></i>Workflow
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="openInVerify(${i})"
+                title="Open this filled-in playbook on the Verify page (adds the LLM semantic check)">
+          <i class="bi bi-patch-check me-1"></i>Verify
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="copyCacao(${i}, this)"
+                title="Copy this filled-in CACAO 2.0 playbook as JSON">
+          <i class="bi bi-clipboard me-1"></i>Copy CACAO
+        </button>` : ''}
+        <button class="btn btn-sm btn-primary ms-auto"
+                onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
+          <i class="bi bi-play-fill me-1"></i>Execute
+        </button>
+      </div>
     </div>`;
   }).join('');
 
@@ -486,7 +484,6 @@ function renderOrchResult(r) {
     ${cacaoSection}
     <div class="mt-3">
       <div class="small text-muted mb-2">
-        <i class="bi bi-journal-code me-1"></i>
         Recommended Playbooks
         <span class="badge bg-secondary ms-1">${playbooks.length}</span>
       </div>
@@ -563,7 +560,7 @@ function copyCacao(i, btn) {
   if (!pb || !pb.cacao) return;
   navigator.clipboard.writeText(JSON.stringify(pb.cacao, null, 2)).then(() => {
     btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied';
-    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 1500);
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy CACAO'; }, 1500);
   });
 }
 

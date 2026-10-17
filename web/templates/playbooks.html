@@ -142,10 +142,10 @@ function pbCard(pb) {
           <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
         </div>
         <div class="d-flex gap-1 align-items-center flex-shrink-0 ms-2">
-          <span class="badge bg-secondary" style="font-size:.62rem"
+          <span class="badge bg-light text-secondary border" style="font-size:.62rem"
                 title="Template version — the 'version:' field of this playbook's YAML file. Independent of the CACAO spec version.">
             template v${pb.version}</span>
-          <span class="badge bg-primary bg-opacity-25 text-primary" style="font-size:.62rem"
+          <span class="badge bg-light text-secondary border" style="font-size:.62rem"
                 title="CACAO specification this workflow conforms to (cacao.spec_version)">
             ${escHtml(specVersion(pb))}</span>
         </div>
@@ -163,10 +163,9 @@ function pbCard(pb) {
         <div class="mb-2">
           <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none d-flex align-items-center gap-1"
                   data-bs-toggle="collapse" data-bs-target="#params-${slug}">
-            <i class="bi bi-sliders me-1"></i>
             Parameters
             <span class="badge bg-secondary ms-1">${(pb.parameters||[]).length}</span>
-            ${reqCount ? `<span class="badge bg-warning text-dark ms-1">${reqCount} required</span>` : ''}
+            ${reqCount ? `<span class="badge bg-light text-secondary border ms-1">${reqCount} required</span>` : ''}
           </button>
           <div class="collapse mt-2" id="params-${slug}">
             ${paramsRows ? `
@@ -189,7 +188,7 @@ function pbCard(pb) {
         <div class="mb-2">
           <button class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
                   data-bs-toggle="collapse" data-bs-target="#cacao-${slug}">
-            <i class="bi bi-code-slash me-1"></i>CACAO 2.0 Workflow
+            CACAO 2.0 JSON
           </button>
           <div class="collapse mt-2" id="cacao-${slug}">
             <pre class="json-viewer">${escHtml(cacaoJson)}</pre>

@@ -249,22 +249,25 @@ code { color: #0969da; background: #eaeef2; padding: 1px 5px; border-radius: 4px
 .table-borderless td { border: none !important; }
 
 /* ── High-contrast tactic colours (light-bg safe) ── */
-.tactic-lateral-movement     { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
-.tactic-credential-access    { background:#fef3c7 !important; color:#78350f !important; border:1px solid #fbbf24 !important; }
-.tactic-discovery            { background:#e0f2fe !important; color:#075985 !important; border:1px solid #38bdf8 !important; }
-.tactic-execution            { background:#ede9fe !important; color:#4c1d95 !important; border:1px solid #a78bfa !important; }
-.tactic-persistence          { background:#f0fdf4 !important; color:#14532d !important; border:1px solid #4ade80 !important; }
-.tactic-privilege-escalation { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
-.tactic-defense-evasion      { background:#f1f5f9 !important; color:#334155 !important; border:1px solid #94a3b8 !important; }
-.tactic-collection           { background:#ecfdf5 !important; color:#064e3b !important; border:1px solid #34d399 !important; }
-.tactic-exfiltration         { background:#fef3c7 !important; color:#78350f !important; border:1px solid #fbbf24 !important; }
-.tactic-command-and-control  { background:#fde8e8 !important; color:#9b1c1c !important; border:1px solid #f87171 !important; }
-.tactic-impact               { background:#fff1f2 !important; color:#881337 !important; border:1px solid #fb7185 !important; }
-.tactic-initial-access       { background:#fff7ed !important; color:#7c2d12 !important; border:1px solid #fb923c !important; }
+/* Tactic badges: one neutral style. Colour is kept for status (severity, tier,
+   verification), so a tactic name never reads as an error or a warning. */
+.tactic-lateral-movement,
+.tactic-credential-access,
+.tactic-discovery,
+.tactic-execution,
+.tactic-persistence,
+.tactic-privilege-escalation,
+.tactic-defense-evasion,
+.tactic-collection,
+.tactic-exfiltration,
+.tactic-command-and-control,
+.tactic-impact,
+.tactic-initial-access { background:#f6f8fa !important; color:#24292f !important; border:1px solid #d0d7de !important; }
 
 
-/* Alerts → Live tabs: the default topic is a light placeholder, not a value */
-.topic-input::placeholder { color: #b8bec5; opacity: 1; }
+/* Hint text in every input/textarea (search boxes, topic fields, Verify's JSON box):
+   light grey, so it reads as a suggestion rather than a value already entered */
+.form-control::placeholder { color: #b8bec5; opacity: 1; }
 
 /* Alerts → Live tabs: read-only broker field sized to its address (size attr set in JS) */
 .input-group > .form-control.broker-input { flex: 0 0 auto; width: auto; }
