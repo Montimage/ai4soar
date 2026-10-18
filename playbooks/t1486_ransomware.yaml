@@ -96,7 +96,7 @@ cacao:
             iptables -I OUTPUT 2 -p tcp --sport 22 -j ACCEPT
             iptables -I INPUT 3 -j DROP
             iptables -I OUTPUT 3 -j DROP
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] ISOLATED {{hostname}} ({{src_ip}}), SSH only" >> /var/log/ai4soar_blocks.log
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] ISOLATED {{hostname}} ({{src_ip}}), SSH only" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--snapshot-volumes"
       on_failure: "step--snapshot-volumes"
 
@@ -112,7 +112,7 @@ cacao:
       commands:
         - type: bash
           command: |
-            [ "$(id -u {{username}} 2>/dev/null || echo 0)" -ge 1000 ] && pkill -KILL -u {{username}} && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED processes of {{username}} on {{hostname}}" >> /var/log/ai4soar_blocks.log || echo "No regular account to stop: find the encrypting process with: lsof +D /home"
+            [ "$(id -u {{username}} 2>/dev/null || echo 0)" -ge 1000 ] && pkill -KILL -u {{username}} && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED processes of {{username}} on {{hostname}}" | tee -a /var/log/ai4soar_blocks.log || echo "No regular account to stop: find the encrypting process with: lsof +D /home"
       on_success: "step--create-ticket"
       on_failure: "step--create-ticket"
 

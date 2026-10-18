@@ -100,7 +100,7 @@ cacao:
           # On the exfiltrating host: drop everything it sends to the destination
           command: >
             iptables -I OUTPUT -d {{dst_ip}} -j DROP
-            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED exfil {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED exfil {{src_ip}} -> {{dst_ip}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--collect-evidence"
       on_failure: "step--collect-evidence"
 

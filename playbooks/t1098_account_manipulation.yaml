@@ -92,7 +92,7 @@ cacao:
         - type: bash
           command: >
             usermod -L -e 1 {{username}}
-            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] LOCKED {{username}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] LOCKED {{username}} on {{hostname}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--audit-groups"
       on_failure: "step--audit-groups"
 
@@ -105,7 +105,7 @@ cacao:
         - type: bash
           command: >
             getent group sudo wheel admin 2>/dev/null > /tmp/ai4soar_groups_{{hostname}}.txt;
-             cat /etc/passwd | awk -F: '$3==0{print $1}' >> /tmp/ai4soar_groups_{{hostname}}.txt
+             grep -E '^[^:]*:[^:]*:0:' /etc/passwd | cut -d: -f1 >> /tmp/ai4soar_groups_{{hostname}}.txt
       on_success: "step--purge-ssh-keys"
       on_failure: "step--purge-ssh-keys"
 
@@ -116,10 +116,15 @@ cacao:
       targets: ["ssh--1402bddd-f7f9-53dc-8c49-cd523fd8ad0f"]
       commands:
         - type: bash
-          command: >
-            h=$(getent passwd {{username}} | cut -d: -f6) && [ -n "$h" ] &&
-             install -m 600 $h/.ssh/authorized_keys /tmp/ai4soar_bak_keys_{{username}}.txt &&
-             : > $h/.ssh/authorized_keys
+          # ~user is that account's home directory
+          command: |
+            if [ -f ~{{username}}/.ssh/authorized_keys ]; then
+              install -m 600 ~{{username}}/.ssh/authorized_keys /root/ai4soar_bak_keys_{{username}}.txt
+              : > ~{{username}}/.ssh/authorized_keys
+              echo "SSH keys of {{username}} removed, backup in /root/ai4soar_bak_keys_{{username}}.txt"
+            else
+              echo "{{username}} has no SSH keys"
+            fi
       on_completion: "step--create-ticket"
 
     step--create-ticket:

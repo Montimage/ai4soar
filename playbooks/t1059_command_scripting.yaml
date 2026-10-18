@@ -99,7 +99,7 @@ cacao:
           # exact name. Not
           # "pkill -f": it also matched the shell running this step
           command: |
-            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
+            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--notify"
       on_failure: "step--notify"
     step--collect-evidence:

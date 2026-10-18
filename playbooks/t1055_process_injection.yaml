@@ -104,7 +104,7 @@ cacao:
           # holds the name)
           command: |
             ps auxf > /tmp/ai4soar_procs_before_kill.txt
-            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}} user={{username}}" >> /var/log/ai4soar_blocks.log
+            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}} user={{username}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--lock-session"
       on_failure: "step--lock-session"
 

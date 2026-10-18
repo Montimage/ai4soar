@@ -80,7 +80,7 @@ cacao:
       targets: ["ssh--98baaae3-0518-54ac-9909-24a49a4452ab"]
       commands:
         - type: bash
-          command: "timeout 10 tcpdump -i any -c 50 'arp and host {{disputed_ip}}' -w /tmp/arp_evidence_{{disputed_ip}}_$(date +%s).pcap"
+          command: "timeout 10 tcpdump -i any -c 50 'arp and host {{disputed_ip}}' -w /tmp/arp_evidence_{{disputed_ip}}_$(date +%s).pcap 2>&1"
       on_completion: "step--flush-cache"
     step--flush-cache:
       type: action

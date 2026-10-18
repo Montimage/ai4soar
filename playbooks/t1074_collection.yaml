@@ -101,7 +101,7 @@ cacao:
             iptables -I OUTPUT 1 -o lo -j ACCEPT
             iptables -I OUTPUT 2 -p tcp --sport 22 -j ACCEPT
             iptables -I OUTPUT 3 -j DROP
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED outbound from {{hostname}} ({{src_ip}}), SSH replies only" >> /var/log/ai4soar_blocks.log
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED outbound from {{hostname}} ({{src_ip}}), SSH replies only" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--preserve-evidence"
       on_failure: "step--preserve-evidence"
     step--preserve-evidence:
@@ -112,10 +112,9 @@ cacao:
       commands:
         - type: bash
           command: >
-            f=/tmp/ai4soar_collection_$(date +%s).txt;
-             ls -lah -- '{{file_path}}' > $f 2>&1;
-             ps auxf >> $f;
-             find /tmp /var/tmp /dev/shm -mmin -1440 -type f -ls >> $f 2>/dev/null
+            ls -lah -- '{{file_path}}' > /root/ai4soar_collection_{{hostname}}.txt 2>&1;
+             ps auxf >> /root/ai4soar_collection_{{hostname}}.txt;
+             find /tmp /var/tmp /dev/shm -mmin -1440 -type f -ls >> /root/ai4soar_collection_{{hostname}}.txt 2>/dev/null
       on_completion: "step--notify"
     step--notify:
       type: action

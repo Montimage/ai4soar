@@ -93,7 +93,7 @@ cacao:
              systemctl start clamav-daemon 2>/dev/null || systemctl start clamd@scan 2>/dev/null || echo "No ClamAV service on {{hostname}}"
         - type: bash
           command: >
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] AV RE-ENABLED on {{hostname}}" >> /var/log/ai4soar_blocks.log
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] AV RE-ENABLED on {{hostname}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--restore-firewall"
       on_failure: "step--restore-firewall"
 
@@ -105,7 +105,7 @@ cacao:
       commands:
         - type: bash
           command: >
-            systemctl start firewalld 2>/dev/null || ufw --force enable 2>/dev/null || iptables-restore < /etc/iptables/rules.v4 2>/dev/null || true
+            systemctl start firewalld 2>/dev/null || ufw --force enable 2>/dev/null || { [ -f /etc/iptables/rules.v4 ] && iptables-restore < /etc/iptables/rules.v4 && echo "iptables rules restored from /etc/iptables/rules.v4"; } || echo "No firewall service or saved ruleset on {{hostname}}"
       on_success: "step--restore-logging"
       on_failure: "step--restore-logging"
 

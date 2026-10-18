@@ -105,12 +105,12 @@ cacao:
         - type: bash
           command: >
             echo "iptables -D INPUT   -s {{src_ip}} -j DROP" |
-            at now + {{duration_hours}} hours
+            at now + {{duration_hours}} hours 2>&1
         - type: bash
           command: >
             iptables -C INPUT -s {{src_ip}} -j DROP
             && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED {{src_ip}} for {{duration_hours}}h (DoS, host={{hostname}})"
-            >> /var/log/ai4soar_blocks.log
+            | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--rate-limit"
       on_failure: "step--rate-limit"
 
@@ -132,7 +132,7 @@ cacao:
             case "{{dst_port}}" in
               ''|*[!0-9]*) echo "No usable dst_port: skipping rate-limit rule" ;;
               *) iptables -I INPUT -p tcp --dport {{dst_port}} -m conntrack --ctstate NEW -m hashlimit --hashlimit-mode srcip --hashlimit-above 20/sec --hashlimit-burst 50 --hashlimit-name ai4soar_dos -j DROP
-                 echo "iptables -D INPUT -p tcp --dport {{dst_port}} -m conntrack --ctstate NEW -m hashlimit --hashlimit-mode srcip --hashlimit-above 20/sec --hashlimit-burst 50 --hashlimit-name ai4soar_dos -j DROP" | at now + {{duration_hours}} hours ;;
+                 echo "iptables -D INPUT -p tcp --dport {{dst_port}} -m conntrack --ctstate NEW -m hashlimit --hashlimit-mode srcip --hashlimit-above 20/sec --hashlimit-burst 50 --hashlimit-name ai4soar_dos -j DROP" | at now + {{duration_hours}} hours 2>&1 ;;
             esac
       on_success: "step--create-ticket"
       on_failure: "step--create-ticket"

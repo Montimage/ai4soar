@@ -95,7 +95,7 @@ cacao:
         - type: bash
           command: >
             usermod -L -e 1 {{username}} && { pkill -KILL -u {{username}}; true; }
-            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] DISABLED {{username}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] DISABLED {{username}} on {{hostname}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--block-ip"
       on_failure: "step--block-ip"
     step--block-ip:
@@ -107,7 +107,7 @@ cacao:
         - type: bash
           command: >
             iptables -I INPUT -s {{src_ip}} -j DROP
-            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED {{src_ip}} (compromised account {{username}})" >> /var/log/ai4soar_blocks.log
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED {{src_ip}} (compromised account {{username}})" | tee -a /var/log/ai4soar_blocks.log
             || echo "No usable src_ip: attacker IP not blocked"
       on_completion: "step--notify"
     step--notify:

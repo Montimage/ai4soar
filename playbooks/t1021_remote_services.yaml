@@ -109,7 +109,7 @@ cacao:
         - type: bash
           command: >
             iptables -I INPUT -s {{src_ip}} -j DROP
-            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED lateral movement source {{src_ip}}" >> /var/log/ai4soar_blocks.log
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED lateral movement source {{src_ip}}" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--isolate-account"
       on_failure: "step--isolate-account"
     step--isolate-account:

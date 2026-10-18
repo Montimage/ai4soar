@@ -101,6 +101,7 @@ cacao:
           command: >
             iptables -I OUTPUT -p tcp --syn ! -o lo -j DROP
             && iptables -I OUTPUT -p tcp --syn ! -o lo -m limit --limit 10/min -j ACCEPT
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] RATE-LIMITED new outgoing connections of {{hostname}} to 10/min" | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--investigate"
       on_failure: "step--investigate"
     step--investigate:
@@ -112,7 +113,8 @@ cacao:
       commands:
         - type: bash
           command: >
-            f=/tmp/ai4soar_discovery_$(date +%s).txt; ss -tanp > $f; ps auxf >> $f
+            ss -tanp > /root/ai4soar_discovery_{{hostname}}.txt; ps auxf >> /root/ai4soar_discovery_{{hostname}}.txt;
+             echo "Snapshot saved: /root/ai4soar_discovery_{{hostname}}.txt ($(wc -l < /root/ai4soar_discovery_{{hostname}}.txt) lines)"
       on_completion: "step--notify"
     step--notify:
       type: action

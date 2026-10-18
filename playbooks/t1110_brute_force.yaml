@@ -101,13 +101,13 @@ cacao:
           # Schedule automatic rule removal after duration_hours
           command: >
             echo "iptables -D INPUT -s {{src_ip}} -j DROP" |
-            at now + {{duration_hours}} hours
+            at now + {{duration_hours}} hours 2>&1
         - type: bash
           # Log only if the block rule is really in place (iptables -C checks it exists)
           command: >
             iptables -C INPUT -s {{src_ip}} -j DROP
             && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED {{src_ip}} for {{duration_hours}}h (host={{hostname}})"
-            >> /var/log/ai4soar_blocks.log
+            | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--lock-account"
       on_failure: "step--lock-account"   # always proceed; ticket captures the failure
 
@@ -124,7 +124,7 @@ cacao:
           command: >
             usermod -L -e 1 {{username}}
             && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] LOCKED account {{username}} on {{hostname}}"
-            >> /var/log/ai4soar_blocks.log
+            | tee -a /var/log/ai4soar_blocks.log
       on_success: "step--create-ticket"
       on_failure: "step--create-ticket"
 
