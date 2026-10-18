@@ -1,0 +1,10 @@
+#!/bin/sh
+# Demo lab stand-in for systemctl (the container has no systemd): answers like a server
+# whose service is there, changes nothing.
+case "$1" in
+  is-active)  echo active ;;
+  is-enabled) echo enabled ;;
+  status)     echo "* $2 - (demo lab) loaded, active (running)" ;;
+  *)          echo "systemctl $*: ok (demo lab)" ;;
+esac
+exit 0

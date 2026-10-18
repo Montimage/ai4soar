@@ -189,10 +189,23 @@ def to_dry_run(cacao: Dict) -> Tuple[Dict, List[str], List[Dict]]:
     return pb, warnings, skipped
 
 
+def _fill_plain(cacao: Dict) -> Dict:
+    """.env settings that are not secrets (an API key never goes to the dry run)."""
+    import json, os
+    from core.intelligent_orchestration.parameterizer import secret_settings
+    secret = secret_settings()
+    text = json.dumps(cacao)
+    for name, env in secret_settings(include_plain=True).items():
+        if name not in secret and os.getenv(env):
+            text = re.sub(r"\{\{\s*" + re.escape(name) + r"\s*\}\}",
+                          lambda _m: json.dumps(os.environ[env])[1:-1], text)
+    return json.loads(text)
+
+
 def run_dry(cacao: Dict) -> Dict:
     """Trigger the dry run. Returns {execution_id, warnings, steps, skipped}: steps counts
     every step of the playbook, skipped lists those on a branch the dry run does not take."""
-    pb, warnings, skipped = to_dry_run(cacao)
+    pb, warnings, skipped = to_dry_run(_fill_plain(cacao))
     r = _api("POST", "/trigger/playbook", json=pb).json()
     return {"execution_id": r.get("execution_id"), "warnings": warnings, "skipped": skipped,
             "steps": sum(1 for s in pb["workflow"].values() if s["type"] == "action")}

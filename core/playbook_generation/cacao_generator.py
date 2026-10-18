@@ -64,7 +64,9 @@ def generate(alert_text: str) -> Dict:
         "short commands per step, one per line, each doing one obvious thing with a standard "
         "tool (ps, ss, kill, pkill, iptables, mv, rm, crontab, systemctl, usermod, tee). No "
         "shell variables, functions, loops, subshells, || / && fallback chains or long "
-        "pipelines.\n"
+        "pipelines. A command that changes something and prints nothing on success "
+        "(iptables, usermod, chmod, mv) is followed by one that shows the result (iptables -S, "
+        "passwd -S, ls -l), so the output proves what was done.\n"
         "Return ONLY the completed JSON — no markdown fences, no explanation.\n\n"
         f"{json.dumps(skeleton, indent=2)}\n"
     )
@@ -131,7 +133,8 @@ def _build_skeleton() -> Dict:
                               "<fill: recovery command>", s_report),
             s_report:  action("Document", "Record incident findings and lessons learned.",
                               "<fill: command that appends a one-line summary of the incident "
-                              "and the actions taken to /var/log/ai4soar_incidents.log>", s_end),
+                              "and the actions taken to /var/log/ai4soar_incidents.log with tee -a, so the line also "
+                              "shows in the step output>", s_end),
             s_end:     {"type": "end"},
         },
     }

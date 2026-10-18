@@ -659,6 +659,13 @@ class _Converter:
     def _bash_node(self, node_id: str, name: str, commands: List[Dict], description: str,
                    step: Optional[Dict] = None) -> Dict:
         script = "\n".join(_command_text(c) for c in commands)
+        # Shuffle reads "$name" as a reference to a node or variable of its own and
+        # replaces it before the command runs: a shell variable silently becomes empty
+        shell_vars = sorted(set(re.findall(r"\$\{?([A-Za-z_][A-Za-z0-9_]*|[0-9])", script)))
+        if shell_vars:
+            self.warnings.append(f"{name}: the command uses shell variable(s) "
+                                 f"{', '.join('$' + v for v in shell_vars)}, which Shuffle replaces "
+                                 f"before running it; write the values out instead")
         if self.dry_run:
             return self._node(node_id, name, TOOLS_APP, "repeat_back_to_me",
                               {"call": self._shown(f"[bash, dry run] {script}")}, description)

@@ -1,0 +1,12 @@
+# Demo victim (web-01): an empty Debian server the playbooks really act on; all
+# changes stay inside this container. Shuffle reaches it at 172.17.0.1:2224
+# (docker-compose.lab.yml). Reset: up -d --force-recreate.
+FROM debian:12-slim
+ARG VICTIM_PASSWORD
+RUN echo "postfix postfix/main_mailer_type select Local only" | debconf-set-selections  && echo "postfix postfix/mailname string web-01" | debconf-set-selections  && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends       openssh-server sudo iptables at cron procps iproute2 psmisc lsof net-tools tcpdump       postfix passwd login util-linux findutils coreutils curl ca-certificates  && rm -rf /var/lib/apt/lists/*  && mkdir -p /run/sshd  && echo "root:${VICTIM_PASSWORD}" | chpasswd  && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/; s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config  && for u in alice bob dev; do useradd -m -s /bin/bash "$u"; done  && install -d -m 700 -o alice -g alice /home/alice/.ssh  && echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoAttackerKeyAddedToAliceForTheAccountManipulationDemo attacker@203.0.113.66"       > /home/alice/.ssh/authorized_keys  && chown alice:alice /home/alice/.ssh/authorized_keys && chmod 600 /home/alice/.ssh/authorized_keys  && touch /etc/postfix/sender_access && postmap /etc/postfix/sender_access  && postconf -e "smtpd_sender_restrictions = check_sender_access hash:/etc/postfix/sender_access"  && mkdir -p /etc/iptables  && printf '#!/bin/sh\n# Demo "malicious" script: a loop the playbooks can find and kill\nwhile true; do sleep 30; done\n' > /tmp/payload.sh  && chmod 755 /tmp/payload.sh  && install -d -o dev -g dev /tmp/.cache  && install -m 755 -o dev -g dev /bin/sleep /tmp/.cache/xmrig  && echo "@reboot /tmp/.cache/xmrig 100000" | crontab -u dev -  && install -m 4755 -o root -g root /usr/bin/id /usr/local/bin/.sysupdate  && install -d -o dev -g dev /home/dev/projects  && head -c 2097152 /dev/urandom > /home/dev/projects/customers.tar.gz && chown dev:dev /home/dev/projects/customers.tar.gz  && mkdir -p /var/log/nginx  && for i in 1 2 3; do echo '198.51.100.77 - - [18/Oct/2026:16:00:01 +0000] "GET / HTTP/1.1" 200 612 "-" "Mozilla/5.0"' >> /var/log/nginx/access.log; done
+COPY systemctl /usr/local/bin/systemctl
+RUN chmod 755 /usr/local/bin/systemctl
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+EXPOSE 22
+CMD ["/entrypoint.sh"]
