@@ -210,7 +210,7 @@ function benchMeta() {
   return `
     <dt class="col-sm-4 text-muted">Expected</dt>
     <dd class="col-sm-8">
-      ${gt.map(id => `<span class="badge font-monospace me-1"
+      ${gt.map(id => `<span class="badge font-monospace me-1 tech-tag" title="${escHtml(techTitle(id, 'Expected: '))}"
          style="font-size:.65rem;background:#dafbe1;color:#1a7f37;border:1px solid #1a7f37">${escHtml(id)}</span>`).join('')}
       <div class="text-muted mt-1" style="font-size:.7rem">
         ${escHtml(b.source_tool || '')} · ${escHtml(b.note || '')} · ${mode}
@@ -251,7 +251,7 @@ function techniqueLabel(f) {
   const names = f.technique && f.technique !== '—' ? f.technique.split(', ') : [];
   if (!ids.length && !names.length) return '<span class="text-muted">—</span>';
   // The technique id as a tag, like the Playbooks page; its name in the tooltip
-  return (ids.length ? ids : names).map((x, i) => `<span class="badge font-monospace me-1 mb-1 text-dark"
+  return (ids.length ? ids : names).map((x, i) => `<span class="badge font-monospace me-1 mb-1 text-dark tech-tag"
       title="${escHtml(ids.length && names[i] ? `${x} — ${names[i]}` : x)}"
       style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.68rem;cursor:default">${escHtml(x)}</span>`).join('');
 }
@@ -300,19 +300,9 @@ function renderOrchResult(r) {
   const pathBadges = (r.paths_used || [])
     .map(p => `<span class="path-badge">Path ${p}</span>`).join('');
 
-  const techBadges = (r.technique_ids || [])
-    .map((id, i) => {
-      const name = (r.technique_names || [])[i] || '';
-      return `<span class="badge font-monospace me-1 mb-1 text-dark"
-               style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.7rem">${id}${name ? ' \u00b7 ' + name : ''}</span>`;
-    }).join('');
-
   /* Path B returns its FULL ranked top-k, not just the techniques that resolved to a
-     playbook. Showing the whole ranking makes a library coverage gap visible (the model
-     attributed correctly but we have no CACAO template) instead of silently dropping it,
-     and gives the analyst the model's runner-up hypotheses. */
+     playbook: the analyst sees the model's runner-up hypotheses too. */
   const ranked = r.ranked_technique_ids || [];
-  const acted  = new Set(r.technique_ids || []);
   const techName = (id, rank) => {
     // Names come from the API (resolved against the full ATT&CK vocabulary); the static
     // JS map is only a fallback for responses predating ranked_technique_names.
@@ -325,47 +315,22 @@ function renderOrchResult(r) {
 
   // Defined before rankedSection, which shows the tactic next to its title
   const tacticBadges = (r.tactics || [])
-    .map(t => `<span class="badge font-monospace me-1 mb-1 text-dark"
-               style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.7rem">${escHtml(t)}</span>`).join('');
+    .map(t => `<span class="badge me-1 mb-1" style="font-size:.68rem;background:#f1f5f9;color:#334155;border:1px solid #94a3b8">${escHtml(t)}</span>`).join('');
 
-  const rankedSection = ranked.length ? `
+  /* Techniques as tags, as on the Playbooks page: Path B's ranking left to right (most
+     likely first), the name in the tooltip; the tactics on the line below */
+  const techTag = (id, i) => {
+    const name = techName(id, i);
+    const tip = `${ranked.length ? `#${i + 1} · ` : ''}${id}${name ? ` — ${name}` : ''}`;
+    return `<span class="badge font-monospace me-1 mb-1 text-dark tech-tag" title="${escHtml(tip)}"
+              style="font-size:.68rem;background:#e2e8f0;border:1px solid #94a3b8;cursor:default">${escHtml(id)}</span>`;
+  };
+  const techIds = ranked.length ? ranked : (r.technique_ids || []);
+  const rankedSection = techIds.length || tacticBadges ? `
     <div class="mb-3">
-      <div class="small text-muted mb-2 d-flex flex-wrap align-items-center gap-1">
-        LLM Technique Attribution
-        <span class="badge bg-secondary">top ${ranked.length}</span>
-        ${tacticBadges ? `<span class="ms-2">${tacticBadges}</span>` : ''}
-      </div>
-      <div class="d-flex flex-column gap-1">
-        ${ranked.map((id, i) => {
-          /* Covered = the library holds a template for this technique. Several techniques
-             can share one template (T1110, T1110.001 and T1110.003 all use the brute-force
-             playbook); it is recommended once, under the highest-ranked of them. */
-          const covered = acted.has(id) || Boolean((r.ranked_technique_covered || [])[i]);
-          const name    = techName(id, i);
-          const pbIdx   = (r.playbooks || []).findIndex(pb =>
-            (pb.techniques || []).some(t => t === id || t === id.split('.')[0]));
-          const firstRank = pbIdx < 0 ? -1 : ranked.findIndex(other =>
-            (r.playbooks[pbIdx].techniques || []).some(t => t === other || t === other.split('.')[0]));
-          const shared  = covered && !acted.has(id) && firstRank >= 0 && firstRank < i;
-          const flag = shared
-            ? `<span class="rank-flag rank-flag-hit ms-auto flex-shrink-0" style="opacity:.7"
-                     title="Uses the same playbook as #${firstRank + 1} (${escHtml((r.playbooks[pbIdx] || {}).name || '')}), recommended once">
-                 <i class="bi bi-arrow-return-right me-1"></i>same playbook as #${firstRank + 1}</span>`
-            : covered
-            ? `<span class="rank-flag rank-flag-hit ms-auto flex-shrink-0">
-                 <i class="bi bi-journal-code me-1"></i>playbook</span>`
-            : `<span class="rank-flag rank-flag-gap ms-auto flex-shrink-0"
-                     title="The LLM attributed this technique but the playbook library has no CACAO template for it">
-                 <i class="bi bi-exclamation-triangle me-1"></i>no template</span>`;
-          return `
-          <div class="d-flex align-items-center gap-2" style="font-size:.75rem">
-            <span class="rank-badge flex-shrink-0">#${i + 1}</span>
-            <code class="flex-shrink-0 ${covered ? 'rank-tid' : 'rank-tid-unused'}">${escHtml(id)}</code>
-            <span class="text-truncate ${covered ? '' : 'rank-name-unused'}">${escHtml(name)}</span>
-            ${flag}
-          </div>`;
-        }).join('')}
-      </div>
+      ${ranked.length ? `<div class="small text-muted mb-1">LLM technique attribution, top ${ranked.length}, most likely first</div>` : ''}
+      <div>${techIds.map(techTag).join('')}</div>
+      ${tacticBadges ? `<div>${tacticBadges}</div>` : ''}
     </div>` : '';
 
   let actionBadges = '';
@@ -477,11 +442,7 @@ function renderOrchResult(r) {
       ${pathBadges}
       ${actionBadges}
     </div>
-    ${ranked.length
-        ? rankedSection
-        : (techBadges || tacticBadges
-            ? `<div class="mb-3 d-flex flex-wrap align-items-center">${techBadges}${tacticBadges}</div>`
-            : '')}
+    ${rankedSection}
     ${llmSection}
     <div class="mt-3">
       <div class="small text-muted mb-2">
@@ -630,7 +591,8 @@ async function openShuffleModal(i) {
    step printing on a sandbox what it would do (core/orchestration_engine/soarca.py). */
 let soarcaPlaybook = null;
 let shufflePlaybook = null;
-let shuffleNodes = 0;         // node count of the workflow in the dialog (for "n of m done")   // the CACAO of the playbook in the Execute dialog (step names)
+let shuffleNodes = 0;         // node count of the workflow in the dialog (for "n of m done")
+let shuffleLabValues = {};    // demo lab values filled at deployment (they name some steps)   // the CACAO of the playbook in the Execute dialog (step names)
 async function openSoarcaSection(pb) {
   const el = document.getElementById('soarca-section');
   const li = document.getElementById('exec-tab-soarca-li');
@@ -740,9 +702,11 @@ function copyRunJson(tool, btn) {
 }
 function stepsReportHtml({ ok, label, total, steps, notes = [], tools = '', running = false, json = null, tone }) {
   const skipped = steps.filter(x => x.skipped).length;
-  const good = steps.filter(x => x.ok && !x.skipped).length;
-  const bad = steps.length - good - skipped;
+  const warned = steps.filter(x => x.warn).length;
+  const good = steps.filter(x => x.ok && !x.skipped && !x.warn).length;
+  const bad = steps.length - good - skipped - warned;
   const n = total ?? steps.length;
+  if (!running && ok && warned && label === 'COMPLETED') { label = 'COMPLETED WITH WARNINGS'; tone = tone || 'warning'; }
   return `
     <div class="rounded border p-2 exec-report">
       <div class="d-flex align-items-center gap-2 mb-2">
@@ -750,7 +714,7 @@ function stepsReportHtml({ ok, label, total, steps, notes = [], tools = '', runn
           ? '<span class="spinner-border spinner-border-sm me-1" style="width:.6rem;height:.6rem"></span>RUNNING'
           : escHtml(label)}</span>
         <span class="text-muted">${running ? `${steps.length} of ${n} step${n !== 1 ? 's' : ''} done`
-          : `${good} of ${n} step${n !== 1 ? 's' : ''} ok`}${bad ? ` · <span class="text-danger">${bad} failed</span>` : ''}${skipped ? ` · ${skipped} skipped` : ''}</span>
+          : `${good} of ${n} step${n !== 1 ? 's' : ''} ok`}${warned ? ` · <span class="text-warning">${warned} with errors on the host</span>` : ''}${bad ? ` · <span class="text-danger">${bad} failed</span>` : ''}${skipped ? ` · ${skipped} skipped` : ''}</span>
         <span class="ms-auto d-flex gap-2">${json ? json.html : ''}${tools}</span>
       </div>
       ${json ? `<div class="collapse mb-2" id="${json.id}"><pre class="mb-0 px-2 py-1 rounded"
@@ -759,9 +723,10 @@ function stepsReportHtml({ ok, label, total, steps, notes = [], tools = '', runn
       ${steps.map((x, i) => `
         <div class="mb-2">
           <div class="d-flex gap-2 align-items-baseline">
-            <i class="bi ${x.skipped ? 'bi-skip-forward-circle-fill text-secondary' : x.ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}"></i>
+            <i class="bi ${x.skipped ? 'bi-skip-forward-circle-fill text-secondary' : x.warn ? 'bi-exclamation-triangle-fill text-warning'
+                : x.ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}"></i>
             <span class="fw-semibold">${i + 1}. ${escHtml(x.name || '—')}</span>
-            ${x.summary ? `<span class="${x.ok ? 'text-muted' : 'text-danger'}">${escHtml(x.summary)}</span>` : ''}
+            ${x.summary ? `<span class="${x.warn ? 'text-warning' : x.ok ? 'text-muted' : 'text-danger'}">${escHtml(x.summary)}</span>` : ''}
           </div>
           ${x.detail ? `<pre class="mb-0 mt-1 ms-4 px-2 py-1 rounded">${escHtml(x.detail)}</pre>` : ''}
         </div>`).join('') || '<span class="text-muted">No step results.</span>'}
@@ -776,6 +741,7 @@ function setTabState(tool, state) {
 
 function renderShuffleWorkflow(d) {
   shuffleNodes = d.nodes || 0;
+  shuffleLabValues = (d.demo_victim && d.demo_victim.lab_values) || {};
   const MODE = {
     shuffle: ['', 'Shuffle workflow (Run ssh command, http)',
               "Built as in Shuffle's editor: each step acting on a machine is a Run ssh command node on the victim, HTTP steps are http nodes"],
@@ -788,6 +754,15 @@ function renderShuffleWorkflow(d) {
     <div class="mb-3">
       <div class="small text-muted mb-2">${d.mode === 'dry_run'
         ? 'Shuffle is in dry-run mode: every command is only echoed.'
+        : d.demo_victim
+        ? (() => {
+            // One quiet line; the details (address, values taken from the lab) on hover
+            const lab = Object.entries(d.demo_victim.lab_values || {});
+            const tip = `Demo lab: the SSH steps run on ${d.demo_victim.name} (${d.demo_victim.address}), a throwaway Linux container.`
+              + (lab.length ? ` Not in the alert, lab values used: ${lab.map(([k, v]) => `${k} = ${v}`).join(', ')}.` : '');
+            return `<span title="${escHtml(tip)}" style="cursor:help"><i class="bi bi-pc-display me-1"></i>Runs on
+              <strong>${escHtml(d.demo_victim.name)}</strong> (demo lab)${lab.length ? ' <i class="bi bi-info-circle"></i>' : ''}</span>`;
+          })()
         : warns.some(w => w.includes('SSH credentials') || w.includes('affected host'))
         ? 'Runs the commands over SSH on the affected machine: fill Host and its credentials on the nodes in Shuffle first.'
         : 'Runs the playbook for real: every step is ready, nothing to fill in Shuffle.'}</div>
@@ -954,6 +929,12 @@ function shuffleNodeOutcome(r) {
   if (obj && (obj.output !== undefined || obj.error_logs !== undefined) && !appFailed) {
     // Run ssh command: what the command printed (nothing, for most firewall commands)
     detail = [obj.output, obj.error_logs ? `stderr:\n${obj.error_logs}` : ''].filter(Boolean).join('\n').trim();
+    // The node ran, but commands on the host wrote errors: worth a look, not a failure.
+    // Only error-like stderr counts: many tools write normal messages there (fuser lists
+    // the file, at confirms the job, tcpdump reports the capture)
+    if (/no such|cannot|can't|denied|not found|failed|failure|invalid|unknown|error|refused|unable|illegal|usage:/i
+          .test(String(obj.error_logs || '')))
+      return { ok: true, warn: true, summary: 'the commands reported errors on the host', detail };
     summary = detail ? '' : 'done (the command printed nothing)';
   } else if (obj && (obj.stdout !== undefined || obj.stderr !== undefined))
     detail = [obj.stdout, obj.stderr ? `stderr:\n${obj.stderr}` : ''].filter(Boolean).join('\n').trim();
@@ -974,8 +955,13 @@ function renderShuffleResults(area, data, running = false) {
   const ordered = [...results].sort((a, b) => (a.started_at || Infinity) - (b.started_at || Infinity));
   // Node labels are the step names with punctuation turned into "_": show the step names
   const stepName = {};
+  const withLab = name => Object.entries(shuffleLabValues).reduce((n, [k, v]) =>
+    n.split('{' + '{' + k + '}' + '}').join(v).split('UNKNOWN_' + k.toUpperCase()).join(v), name);
   for (const st of Object.values((shufflePlaybook && shufflePlaybook.workflow) || {}))
-    if (st && st.name) stepName[st.name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')] = st.name;
+    if (st && st.name) {
+      const name = withLab(st.name);
+      stepName[name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')] = name;
+    }
   const steps = ordered.map(r => {
     const label = r.action?.label || r.action?.name || r.action?.app_name || '';
     return { name: stepName[label] || label.replace(/_/g, ' '), ...shuffleNodeOutcome(r) };

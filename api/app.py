@@ -3,6 +3,7 @@ Main Flask application for AI4SOAR platform.
 """
 
 import logging
+import os
 from bson import ObjectId
 from flask import Flask, redirect
 from flask.json.provider import DefaultJSONProvider
@@ -55,6 +56,21 @@ def create_app():
     app.register_blueprint(verification_bp)
     app.register_blueprint(encoding_bp)
     app.register_blueprint(recommendations_bp)
+    from api.routes.incidents import incidents_bp
+    app.register_blueprint(incidents_bp)
+
+    # The internal address (SERVER_INTERNAL_HOST, e.g. docker0 172.17.0.1) lets Shuffle's
+    # containers post incident tickets. A request that does not come from this machine
+    # (Apache and local tools connect from 127.0.0.1) gets the incidents API and nothing
+    # else, whatever host name it uses (e.g. 172.17.0.1.nip.io)
+    if os.getenv("SERVER_INTERNAL_HOST", "").strip():
+        from flask import abort, request as _req
+
+        @app.before_request
+        def _internal_only_incidents():
+            if _req.remote_addr not in ("127.0.0.1", "::1") and not _req.path.startswith(
+                    ("/api/v1/incidents", "/api/v1/email/")):
+                abort(403)
 
     # Register web UI blueprints (no-op if web/ folder is absent)
     if _WEB_ENABLED:

@@ -211,8 +211,9 @@ def template_hash(template: Dict) -> str:
     return hashlib.sha1(body.encode()).hexdigest()[:12]
 
 
-def secret_settings() -> Dict[str, str]:
-    """{parameter name: env variable} of every secret parameter in the library."""
+def secret_settings(include_plain: bool = False) -> Dict[str, str]:
+    """{parameter name: env variable} of every secret parameter in the library (with
+    include_plain, of every .env-sourced parameter)."""
     import glob
     import yaml
     from core.config import config
@@ -220,16 +221,18 @@ def secret_settings() -> Dict[str, str]:
     for path in glob.glob(os.path.join(config.playbook_library.path, "*.y*ml")):
         with open(path, encoding="utf-8") as fh:
             for name, spec in ((yaml.safe_load(fh) or {}).get("parameters") or {}).items():
-                if (spec or {}).get("secret") and spec.get("env"):
+                if (spec or {}).get("env") and (include_plain or spec.get("secret")):
                     out[name] = spec["env"]
     return out
 
 
-def fill_secrets(cacao: Dict) -> Dict:
-    """A copy of the playbook with secret {{placeholders}} filled from .env: for the
-    workflow sent to the SOAR platform only."""
+def fill_secrets(cacao: Dict, include_plain: bool = True) -> Dict:
+    """A copy of the playbook with .env settings filled: secrets (API keys) are only ever
+    filled here, for the workflow sent to the SOAR platform; plain settings (ticketing
+    URL, firewall host) are filled at recommendation time too, and again here so that a
+    recommendation made before a setting was set still deploys with its current value."""
     text = json.dumps(cacao)
-    for name, env in secret_settings().items():
+    for name, env in secret_settings(include_plain).items():
         if os.getenv(env):
             text = re.sub(r"\{\{\s*" + re.escape(name) + r"\s*\}\}",
                           lambda _m: json.dumps(os.environ[env])[1:-1], text)

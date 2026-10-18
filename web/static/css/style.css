@@ -290,3 +290,9 @@ code { color: #0969da; background: #eaeef2; padding: 1px 5px; border-radius: 4px
 /* Footer at the bottom of the window on short pages */
 body { min-height: 100vh; display: flex; flex-direction: column; }
 body > main { flex: 1 0 auto; }
+
+/* Incident ticket pop-ups, top right under the navbar */
+#incident-toasts { position: fixed; top: 64px; right: 16px; z-index: 1085; width: 330px;
+                   display: flex; flex-direction: column; gap: .5rem; }
+.incident-toast { font-size: .78rem; border-left: 4px solid #cf222e; animation: incidentIn .25s ease-out; }
+@keyframes incidentIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }

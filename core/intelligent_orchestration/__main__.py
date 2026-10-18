@@ -6,7 +6,7 @@ Usage (run from project root):
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/wazuh_alert_t1021_002.json
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_b_ssh_bruteforce.json
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_c_powershell_tactic.json
-    python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_d_cryptominer.json
+    python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_d_setuid_file.json
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/wazuh_alert_t1021_002.json --k 3
     python3 -m core.intelligent_orchestration --json   # machine-readable output
     python3 -m core.intelligent_orchestration --no-save  # skip writing output file
@@ -34,7 +34,7 @@ _SAMPLES = {
     "A": "datasets/sample_alerts/wazuh_alert_t1021_002.json",
     "B": "datasets/sample_alerts/alert_path_b_ssh_bruteforce.json",
     "C": "datasets/sample_alerts/alert_path_c_powershell_tactic.json",
-    "D": "datasets/sample_alerts/alert_path_d_cryptominer.json",
+    "D": "datasets/sample_alerts/alert_path_d_setuid_file.json",
 }
 
 _OUTPUT_DIR   = "output/cacao"

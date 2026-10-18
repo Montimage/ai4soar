@@ -86,6 +86,7 @@ function extractAlertFields(alert) {
     raw.Hostname  ||
     raw.host      ||
     (raw.agent || {}).hostname ||
+    (raw.agent || {}).name     ||      // Wazuh: the agent is the host the alert is about
     '—';
 
   // ── Event ID / Channel / Process ──────────────────────────────────────────
@@ -179,4 +180,79 @@ function showToast(message, type = 'success') {
       </div>
     </div>`);
   setTimeout(() => document.getElementById(id)?.remove(), 5000);
+}
+
+/* ── Incident tickets (POST /api/v1/incidents, e.g. from a playbook run in Shuffle) ──
+   Every page polls for new tickets and pops each one up at the top right. Only tickets
+   received after the first poll of this browser session are shown, each once. */
+const INCIDENT_SINCE_KEY = 'ai4soar_incidents_since';
+
+function incidentToast(inc) {
+  let box = document.getElementById('incident-toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'incident-toasts';
+    document.body.appendChild(box);
+  }
+  const t = inc.ticket || {};
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const sev = String(t.severity || '').toLowerCase();
+  const sevCls = { critical: 'bg-danger', high: 'bg-danger', medium: 'bg-warning text-dark', low: 'bg-secondary' }[sev] || 'bg-secondary';
+  const skip = new Set(['title', 'severity', 'technique', 'priority']);
+  const fields = Object.entries(t).filter(([k, v]) => !skip.has(k) && v !== '' && v != null && typeof v !== 'object').slice(0, 6);
+  const at = new Date(inc.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const el = document.createElement('div');
+  el.className = 'incident-toast card shadow';
+  el.innerHTML = `
+    <div class="card-header py-1 px-2 d-flex align-items-center gap-2">
+      <i class="bi bi-ticket-detailed-fill text-danger"></i>
+      <span class="fw-semibold">New incident ticket</span>
+      <code class="text-muted ms-auto" style="font-size:.65rem">${esc(inc.id)}</code>
+      <button type="button" class="btn-close ms-1" style="font-size:.6rem" aria-label="Close"></button>
+    </div>
+    <div class="card-body py-2 px-2">
+      <div class="fw-semibold mb-1">${esc(t.title || 'Incident')}</div>
+      <div class="mb-1">
+        ${sev ? `<span class="badge ${sevCls} me-1">${esc(sev)}</span>` : ''}
+        ${t.technique ? `<span class="badge font-monospace text-dark me-1" style="background:#e2e8f0;border:1px solid #94a3b8">${esc(t.technique)}</span>` : ''}
+        ${t.priority ? `<span class="badge bg-dark me-1">${esc(t.priority)}</span>` : ''}
+      </div>
+      ${fields.map(([k, v]) => `<div class="text-muted"><span>${esc(k)}</span>
+        <span class="font-monospace text-dark">${esc(v)}</span></div>`).join('')}
+      <div class="text-muted mt-1" style="font-size:.68rem">received ${esc(at)} from ${esc(inc.from || '?')}</div>
+    </div>`;
+  el.querySelector('.btn-close').onclick = () => el.remove();
+  box.prepend(el);
+  setTimeout(() => el.remove(), 8000);
+}
+
+async function pollIncidents() {
+  let since = null;
+  try { since = sessionStorage.getItem(INCIDENT_SINCE_KEY); } catch (_) {}
+  try {
+    const r = await fetch(API_BASE + '/v1/incidents' + (since ? `?since=${encodeURIComponent(since)}` : '?limit=1'));
+    if (!r.ok) return;
+    const data = await r.json();
+    if (since) (data.incidents || []).slice().reverse().forEach(incidentToast);
+    const newest = (data.incidents || [])[0];
+    const next = newest && since ? newest.received_at : (since || data.now);
+    try { sessionStorage.setItem(INCIDENT_SINCE_KEY, next); } catch (_) {}
+  } catch (_) { /* server unreachable: try again next time */ }
+}
+pollIncidents();
+setInterval(pollIncidents, 4000);
+
+/* Technique tags (.tech-tag, every page): the technique's name in a tooltip as soon as
+   the mouse is over the tag (the browser's own title tooltip waits about a second) */
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest && e.target.closest('.tech-tag');
+  if (!el || !window.bootstrap || bootstrap.Tooltip.getInstance(el)) return;
+  const tip = bootstrap.Tooltip.getOrCreateInstance(el, { placement: 'top' });
+  tip.show();
+});
+
+/* "T1110 — Brute Force" for a technique tag's tooltip (static ATT&CK names) */
+function techTitle(id, prefix = '') {
+  const name = (typeof MITRE_NAMES !== 'undefined' && MITRE_NAMES[id]) || '';
+  return `${prefix}${id}${name ? ` — ${name}` : ''}`;
 }

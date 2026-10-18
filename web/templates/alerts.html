@@ -147,10 +147,12 @@
     <!-- Filter bar -->
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
       <select class="form-select form-select-sm w-auto" id="hist-source"
-              onchange="switchHistSource()"
-              title="Which alert store to list">
-        <option value="historical" selected>Historical (Wazuh)</option>
-        <option value="benchmark">Benchmark (MMT / Suricata / Snort)</option>
+              onchange="loadHistPage(1)" title="Which sensor produced the alert">
+        <option value="all" selected>All sources</option>
+        <option value="examples">Wazuh (examples)</option>
+        <option value="mmt">MMT (benchmark)</option>
+        <option value="suricata">Suricata (benchmark)</option>
+        <option value="snort">Snort (benchmark)</option>
       </select>
 
       <div class="input-group input-group-sm" style="width:340px">
@@ -166,32 +168,10 @@
         <option value="">All tactics</option>
       </select>
 
-      <!-- Benchmark-only controls -->
-      <select class="form-select form-select-sm w-auto d-none" id="bench-tool"
-              onchange="loadHistPage(1)" title="Which sensor produced the alert">
-        <option value="all" selected>All tools</option>
-        <option value="mmt">MMT</option>
-        <option value="suricata">Suricata</option>
-        <option value="snort">Snort</option>
-      </select>
-      <div class="btn-group btn-group-sm d-none" id="bench-mode" role="group"
-           aria-label="Alert text given to the model">
-        <input type="radio" class="btn-check" name="bench-mode" id="bench-mode-visible"
-               value="visible" checked onchange="loadHistPage(1)">
-        <label class="btn btn-outline-secondary" for="bench-mode-visible"
-               title="Alert text as the sensor emits it, detection signature included">
-          <i class="bi bi-eye me-1"></i>Signature shown
-        </label>
-        <input type="radio" class="btn-check" name="bench-mode" id="bench-mode-stripped"
-               value="stripped" onchange="loadHistPage(1)">
-        <label class="btn btn-outline-secondary" for="bench-mode-stripped"
-               title="Signature removed — the model must attribute from the evidence alone">
-          <i class="bi bi-eye-slash me-1"></i>Stripped
-        </label>
-      </div>
       <select class="form-select form-select-sm w-auto"
               id="hist-limit" onchange="loadHistPage(1)">
-        <option value="10" selected>10 / page</option>
+        <option value="10">10 / page</option>
+        <option value="15" selected>15 / page</option>
         <option value="25">25 / page</option>
         <option value="50">50 / page</option>
         <option value="100">100 / page</option>
@@ -234,7 +214,8 @@
             <th class="sort-col" data-col="tactic"    style="width:110px">
               Tactic <i class="bi bi-sort-down ms-1 text-muted sort-icon"></i>
             </th>
-            <th style="width:112px" id="hist-tcode-th">Techniques</th>
+            <th style="width:112px" id="hist-tcode-th"
+                title="Benchmark alerts: the expected technique (human label), in green">Techniques</th>
             <th style="width:32px" id="hist-action-th"></th>
           </tr>
         </thead>
@@ -470,7 +451,7 @@ loadKafkaConfig();
 /* ── Historical — server-side pagination / sort / search ── */
 
 const histState = {
-  page: 1, pages: 1, total: 0, limit: 10,
+  page: 1, pages: 1, total: 0, limit: 15,
   sortBy: 'timestamp', sortDir: -1,
   search: '', tactic: '',
 };
@@ -481,70 +462,59 @@ function debounceSearch() {
   _searchTimer = setTimeout(() => loadHistPage(1), 380);
 }
 
-/* Which store the table is showing: 'historical' (paged Wazuh) or 'benchmark'
-   (the 37 labelled MMT/Suricata/Snort alerts, returned whole). */
-function histSource() {
-  return document.getElementById('hist-source').value;
-}
-function benchMode() {
-  return document.querySelector('input[name="bench-mode"]:checked')?.value || 'visible';
+function benchMode() { return 'visible'; }   // benchmark alerts: text with the signature
+
+/* One list of every stored alert: the examples (alerts collection, Wazuh) and the
+   37-alert benchmark (MMT / Suricata / Snort), newest first. Both stores are small, so
+   they are fetched whole and filtered, sorted and paged here. */
+let allStored = [];
+
+async function fetchStored() {
+  const src = document.getElementById('hist-source').value;
+  const search = histState.search;
+  const jobs = [];
+  if (src === 'all' || src === 'examples')
+    jobs.push(apiFetch(`/historical_alerts?${new URLSearchParams({ page: 1, limit: 1000, search })}`)
+      .then(d => d.alerts || []).catch(() => []));
+  if (src !== 'examples')
+    jobs.push(apiFetch(`/benchmark_alerts?${new URLSearchParams({
+        source_tool: src === 'all' ? 'all' : src, mode: benchMode(), search })}`)
+      .then(d => d.alerts || []).catch(() => []));
+  return (await Promise.all(jobs)).flat();
 }
 
-/* Show the controls that apply to the selected store and hide the ones that don't —
-   tactic/page-size/pagination are meaningless for a 37-row labelled set, and the tool
-   and text-mode filters are meaningless for production alerts. */
-function switchHistSource() {
-  const bench = histSource() === 'benchmark';
-  document.getElementById('bench-tool').classList.toggle('d-none', !bench);
-  document.getElementById('bench-mode').classList.toggle('d-none', !bench);
-  document.getElementById('hist-tactic').classList.toggle('d-none', bench);
-  document.getElementById('hist-limit').classList.toggle('d-none', bench);
-  document.getElementById('hist-tcode-th').textContent = bench ? 'Expected' : 'Techniques';
-  document.getElementById('hist-search').placeholder = bench
-    ? 'Signature, T-code, tactic…'
-    : 'Search description, host, tactic…';
-  if (bench) showHistPager(false);
-  loadHistPage(1);
+function tacticOf(alert) {
+  const gt = alert._benchmark && alert._benchmark.ground_truth;
+  return String(gt && (gt.tactic || []).length ? gt.tactic.join(', ') : extractAlertFields(alert).tactic || '');
+}
+
+function sortValue(alert, col) {
+  const f = extractAlertFields(alert);
+  return { timestamp: String(f.timestamp || ''), severity: Number(f.severity) || 0, host: String(f.host || ''),
+           description: String(f.description || ''), tactic: tacticOf(alert) }[col] ?? '';
 }
 
 async function loadHistPage(page) {
-  const bench = histSource() === 'benchmark';
-  page = Math.max(1, Math.min(page, bench ? 1 : (histState.pages || 1)));
-  histState.page   = page;
-  histState.limit  = parseInt(document.getElementById('hist-limit').value) || 50;
+  histState.limit  = parseInt(document.getElementById('hist-limit').value) || 15;
   histState.search = document.getElementById('hist-search').value.trim();
   histState.tactic = document.getElementById('hist-tactic').value;
-
   setLoading('hist', true);
   try {
-    let data;
-    if (bench) {
-      const qs = new URLSearchParams({
-        source_tool: document.getElementById('bench-tool').value,
-        mode:        benchMode(),
-        search:      histState.search,
+    if (page === 1 || !allStored.length) allStored = await fetchStored();
+    fillTacticOptions(allStored);
+    const tactic = histState.tactic.toLowerCase();
+    const rows = allStored
+      .filter(a => !tactic || tacticOf(a).toLowerCase().includes(tactic))
+      .sort((a, b) => {
+        const x = sortValue(a, histState.sortBy), y = sortValue(b, histState.sortBy);
+        return (x < y ? -1 : x > y ? 1 : 0) * histState.sortDir;
       });
-      data = await apiFetch(`/benchmark_alerts?${qs}`);
-      histState.total = data.total || 0;
-      histState.pages = 1;
-      histState.page  = 1;
-    } else {
-      const qs = new URLSearchParams({
-        page:     histState.page,
-        limit:    histState.limit,
-        sort_by:  histState.sortBy,
-        sort_dir: histState.sortDir,
-        search:   histState.search,
-        tactic:   histState.tactic,
-      });
-      data = await apiFetch(`/historical_alerts?${qs}`);
-      histState.total  = data.total  || 0;
-      histState.pages  = data.pages  || 1;
-      histState.page   = data.page   || 1;
-    }
-    histAlerts = data.alerts || [];
+    histState.total = rows.length;
+    histState.pages = Math.max(1, Math.ceil(rows.length / histState.limit));
+    histState.page  = Math.max(1, Math.min(page, histState.pages));
+    histAlerts = rows.slice((histState.page - 1) * histState.limit, histState.page * histState.limit);
     renderHistTable(histAlerts);
-    updateHistPager();
+    updateHistPager(rows);
   } catch (e) {
     showToast('MongoDB error: ' + e.message, 'error');
   } finally {
@@ -552,31 +522,20 @@ async function loadHistPage(page) {
   }
 }
 
-function updateHistPager() {
+function updateHistPager(rows = []) {
   const { page, pages, total, limit } = histState;
-  if (histSource() === 'benchmark') {
-    document.getElementById('hist-count').textContent =
-      total ? `${total} benchmark alert${total !== 1 ? 's' : ''}` : 'none loaded';
-    showHistPager(false);
-    if (!total) {
-      document.getElementById('hist-empty').innerHTML =
-        '<i class="bi bi-clipboard-data fs-1 d-block mb-2 opacity-25"></i>' +
-        '<p class="mb-1">No benchmark alerts in MongoDB.</p>' +
-        '<code class="small">python3 scripts/load_benchmark_alerts.py</code>';
-    }
-    return;
-  }
+  const bench = rows.filter(a => a._benchmark).length;
   const from = Math.min((page - 1) * limit + 1, total);
   const to   = Math.min(page * limit, total);
-  document.getElementById('hist-count').textContent =
-    total ? `Showing ${from}–${to} of ${total.toLocaleString()} alerts` : '0 alerts';
-  document.getElementById('hist-pager-info').textContent =
-    total ? `${from}–${to} of ${total.toLocaleString()}` : '';
+  document.getElementById('hist-count').textContent = total
+    ? `${from}–${to} of ${total} alerts` + (bench && bench < total ? ` (${total - bench} examples, ${bench} benchmark)` : '')
+    : '0 alerts';
+  document.getElementById('hist-pager-info').textContent = total ? `${from}–${to} of ${total}` : '';
   document.getElementById('hist-page-input').value = page;
   document.getElementById('hist-total-pages').textContent = `of ${pages}`;
   document.getElementById('hist-prev').disabled = page <= 1;
   document.getElementById('hist-next').disabled = page >= pages;
-  showHistPager(total > 0);
+  showHistPager(total > limit);
 }
 
 /* The pager carries Bootstrap's d-flex (display:flex !important), so hiding it needs
@@ -587,16 +546,12 @@ function showHistPager(visible) {
   else pag.style.setProperty('display', 'none', 'important');
 }
 
-async function loadTacticOptions() {
-  try {
-    const tactics = await apiFetch('/alerts/tactics');
-    const sel = document.getElementById('hist-tactic');
-    tactics.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t; opt.textContent = t;
-      sel.appendChild(opt);
-    });
-  } catch (_) { /* non-fatal */ }
+function fillTacticOptions(alerts) {
+  const sel = document.getElementById('hist-tactic');
+  const keep = sel.value;
+  const tactics = [...new Set(alerts.flatMap(a => tacticOf(a).split(',').map(t => t.trim().toLowerCase())).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All tactics</option>'
+    + tactics.map(t => `<option value="${escHtml(t)}"${t === keep ? ' selected' : ''}>${escHtml(t)}</option>`).join('');
 }
 
 function clearAlerts(source) {
@@ -635,7 +590,8 @@ function sourceBadge(alert) {
   if (alert.Channel || alert.EventID || alert.EventRecordID)
     return '<span class="badge text-white" style="background:#b45309;font-size:.7rem">Dataset</span>';
   const src = alert._source || {};
-  if (src.agent || src.rule)
+  // Wazuh, indexed (_source) or as the manager writes it (rule + manager / decoder / location)
+  if (src.agent || src.rule || (alert.rule && (alert.manager || alert.decoder || alert.location)))
     return '<span class="badge text-white" style="background:#0c7abf;font-size:.7rem">Wazuh</span>';
   if (adapter && adapter !== 'generic' && adapter !== 'unknown')
     return `<span class="badge text-white" style="background:#374151;font-size:.7rem">${escHtml(adapter)}</span>`;
@@ -645,10 +601,12 @@ function sourceBadge(alert) {
 function tcodeBadges(ids) {
   if (!ids || !ids.length) return '<span class="text-muted">—</span>';
   const shown = ids.slice(0, 2).map(id =>
-    `<span class="badge font-monospace me-1 text-dark" style="font-size:.62rem;background:#e2e8f0;border:1px solid #94a3b8">${escHtml(id)}</span>`
+    `<span class="badge font-monospace me-1 text-dark tech-tag" title="${escHtml(techTitle(id))}"
+           style="font-size:.62rem;background:#e2e8f0;border:1px solid #94a3b8">${escHtml(id)}</span>`
   ).join('');
   const more  = ids.length > 2
-    ? `<span class="text-muted" style="font-size:.62rem">+${ids.length - 2}</span>` : '';
+    ? `<span class="text-muted tech-tag" style="font-size:.62rem"
+             title="${escHtml(ids.slice(2).map(i => techTitle(i)).join(', '))}">+${ids.length - 2}</span>` : '';
   return shown + more;
 }
 
@@ -657,7 +615,7 @@ function tcodeBadges(ids) {
 function gtBadges(ids) {
   if (!ids || !ids.length) return '<span class="text-muted">—</span>';
   return ids.map(id =>
-    `<span class="badge font-monospace me-1" title="Expected technique (human label)"
+    `<span class="badge font-monospace me-1 tech-tag" title="${escHtml(techTitle(id, 'Expected (human label): '))}"
            style="font-size:.62rem;background:#dafbe1;color:#1a7f37;border:1px solid #1a7f37">
        ${escHtml(id)}</span>`
   ).join('');
@@ -730,7 +688,7 @@ function renderHistTable(alerts) {
 
   // Empty: the message only, without an empty table header under it
   if (!alerts.length) {
-    if (histSource() !== 'benchmark') empty.innerHTML = HIST_EMPTY_DEFAULT;
+    empty.innerHTML = HIST_EMPTY_DEFAULT;
     empty.classList.remove('d-none');
     wrap.classList.add('d-none');
     tbody.innerHTML = '';
@@ -852,19 +810,13 @@ document.getElementById('hist-thead').addEventListener('click', e => {
   if (icon) {
     icon.className = `bi ${histState.sortDir === -1 ? 'bi-sort-down' : 'bi-sort-up'} ms-1 text-primary sort-icon`;
   }
-  loadHistPage(1);
+  loadHistPage(histState.page);
 });
 
 /* ── Auto-load historical on page load (it's the default tab) ── */
-document.addEventListener('DOMContentLoaded', () => {
-  loadTacticOptions();
-  loadHistPage(1);
-});
+document.addEventListener('DOMContentLoaded', () => loadHistPage(1));
 document.getElementById('tab-hist-btn').addEventListener('shown.bs.tab', () => {
-  if (!histAlerts.length) {
-    loadTacticOptions();
-    loadHistPage(1);
-  }
+  if (!histAlerts.length) loadHistPage(1);
 });
 </script>
 {% endblock %}

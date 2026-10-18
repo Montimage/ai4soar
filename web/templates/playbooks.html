@@ -114,7 +114,7 @@ function pbCard(pb) {
     .map(t => {
       const name   = techniqueNames[t] || '';
       const tipTxt = name ? `${t} — ${name}` : t;
-      return `<span class="badge font-monospace me-1 text-dark"
+      return `<span class="badge font-monospace me-1 text-dark tech-tag"
                data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="${escHtml(tipTxt)}"
                style="font-size:.68rem;background:#e2e8f0;border:1px solid #94a3b8;cursor:default">${escHtml(t)}</span>`;
     }).join('');

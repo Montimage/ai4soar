@@ -285,7 +285,7 @@ class TestLibraryAndShape(unittest.TestCase):
         ssh = by["run_ssh_command"]
         self.assertEqual((ssh["host"], ssh["port"], ssh["user_name"], ssh["password"]),
                          ("203.0.113.5", "2223", "fw", "fw-secret"))
-        self.assertEqual(ssh["command"], "sudo iptables -I INPUT -s 198.51.100.9 -j DROP")
+        self.assertEqual(ssh["command"], "sudo iptables -I INPUT -s 198.51.100.9 -j DROP && echo \"BLOCKED 198.51.100.9 on $(hostname)\"")
         # The decision node forks: notify (then block) when VirusTotal flags the IP, the
         # "no action" node otherwise (same comparison, negated)
         label = {a["id"]: a["label"] for a in wf["actions"]}
