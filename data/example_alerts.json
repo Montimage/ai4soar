@@ -1,0 +1,353 @@
+[
+  {
+    "_id": "lab-06",
+    "timestamp": "2026-10-18T16:30:00Z",
+    "rule": {
+      "id": "100510",
+      "description": "SSH password guessing against alice from 193.32.162.157: 120 failed logins in 60 s",
+      "level": 10,
+      "groups": [
+        "sshd",
+        "authentication_failures",
+        "demo_lab"
+      ]
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcip": "193.32.162.157",
+      "dstuser": "alice",
+      "dstport": "22"
+    },
+    "full_log": "sshd[2211]: Failed password for alice from 193.32.162.157 port 50112 ssh2\nsshd[2213]: Failed password for alice from 193.32.162.157 port 50114 ssh2\nsshd[2215]: Failed password for alice from 193.32.162.157 port 50118 ssh2\n... 117 more failed passwords for alice from 193.32.162.157 within 60 s, one every 0.5 s"
+  },
+  {
+    "_id": "lab-05",
+    "timestamp": "2026-10-18T16:29:00Z",
+    "rule": {
+      "id": "40601",
+      "description": "Port scan from 141.98.11.11 against web-01: 950 ports probed in 30 s",
+      "level": 8,
+      "groups": [
+        "firewall",
+        "scan",
+        "demo_lab"
+      ]
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "iptables",
+    "data": {
+      "srcip": "141.98.11.11",
+      "dstip": "172.21.0.4"
+    },
+    "full_log": "kernel: [FW-LOG] IN=eth0 SRC=141.98.11.11 DST=172.21.0.4 PROTO=TCP SPT=41234 DPT=21 SYN\nkernel: [FW-LOG] IN=eth0 SRC=141.98.11.11 DST=172.21.0.4 PROTO=TCP SPT=41234 DPT=22 SYN\nkernel: [FW-LOG] IN=eth0 SRC=141.98.11.11 DST=172.21.0.4 PROTO=TCP SPT=41234 DPT=23 SYN\nkernel: [FW-LOG] IN=eth0 SRC=141.98.11.11 DST=172.21.0.4 PROTO=TCP SPT=41234 DPT=80 SYN\nkernel: [FW-LOG] IN=eth0 SRC=141.98.11.11 DST=172.21.0.4 PROTO=TCP SPT=41234 DPT=443 SYN\n... 945 more SYN packets to distinct ports from 141.98.11.11 within 30 s, same source port, no completed handshakes"
+  },
+  {
+    "_id": "example-ssh-bruteforce-vps",
+    "timestamp": "2026-10-18T16:28:00Z",
+    "rule": {
+      "id": "5712",
+      "description": "sshd: brute force trying to get access to the system. Authentication failed.",
+      "level": 10,
+      "groups": [
+        "syslog",
+        "sshd",
+        "authentication_failures",
+        "example_demo"
+      ],
+      "mitre": {
+        "id": [
+          "T1110"
+        ],
+        "technique": [
+          "Brute Force"
+        ],
+        "tactic": [
+          "Credential Access"
+        ]
+      }
+    },
+    "agent": {
+      "id": "001",
+      "name": "ai4soar-vps",
+      "ip": "152.228.175.65"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcip": "45.148.10.95",
+      "srcport": "51234",
+      "dstuser": "root"
+    },
+    "full_log": "Oct 18 10:30:00 ai4soar-vps sshd[23817]: Failed password for root from 45.148.10.95 port 51234 ssh2 (8 failures in 60 s)"
+  },
+  {
+    "_id": "lab-01",
+    "timestamp": "2026-10-18T16:27:00Z",
+    "rule": {
+      "id": "40112",
+      "description": "Login of alice from new address 80.94.95.115 after 6 failed attempts",
+      "level": 12,
+      "groups": [
+        "authentication_success",
+        "sshd",
+        "demo_lab"
+      ],
+      "mitre": {
+        "id": [
+          "T1078"
+        ],
+        "technique": [
+          "Valid Accounts"
+        ],
+        "tactic": [
+          "Initial Access"
+        ]
+      }
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcip": "80.94.95.115",
+      "dstuser": "alice"
+    },
+    "full_log": "Login of alice from new address 80.94.95.115 after 6 failed attempts"
+  },
+  {
+    "_id": "lab-04",
+    "timestamp": "2026-10-18T16:26:00Z",
+    "rule": {
+      "id": "80705",
+      "description": "Audit service stopped on web-01 by bob",
+      "level": 11,
+      "groups": [
+        "audit",
+        "service",
+        "demo_lab"
+      ],
+      "mitre": {
+        "id": [
+          "T1562.001"
+        ],
+        "technique": [
+          "Disable or Modify Tools"
+        ],
+        "tactic": [
+          "Defense Evasion"
+        ]
+      }
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcuser": "bob"
+    },
+    "full_log": "Audit service stopped on web-01 by bob"
+  },
+  {
+    "_id": "example-path-d-setuid-file",
+    "timestamp": "2026-10-18T16:25:00Z",
+    "rule": {
+      "id": "510",
+      "description": "Host-based anomaly: new setuid-root file /usr/local/bin/.sysupdate (hidden name, created by user bob)",
+      "level": 11,
+      "groups": [
+        "ossec",
+        "rootcheck",
+        "syscheck",
+        "example_path_d"
+      ]
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.17.0.1"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "rootcheck",
+    "decoder": {
+      "name": "rootcheck"
+    },
+    "data": {
+      "file": "/usr/local/bin/.sysupdate",
+      "perm": "-rwsr-xr-x",
+      "uname": "root",
+      "created_by": "bob",
+      "sha256": "4f0f2c6e7d3b0a1e9c8b7a6d5e4f3c2b1a0918273645546372819f0e1d2c3b4a"
+    },
+    "full_log": "File '/usr/local/bin/.sysupdate' is owned by root and has the setuid bit set (-rwsr-xr-x). Not part of any installed package; created 2026-10-18 15:39 by uid 1001 (bob)."
+  },
+  {
+    "_id": "lab-07",
+    "timestamp": "2026-10-18T16:24:00Z",
+    "rule": {
+      "id": "87105",
+      "description": "Large outbound transfer from web-01 to 185.220.101.4:443: 2.1 GB in 4 minutes by user dev",
+      "level": 11,
+      "groups": [
+        "network",
+        "data_transfer",
+        "demo_lab"
+      ]
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "netflow",
+    "data": {
+      "srcip": "172.21.0.4",
+      "dstip": "185.220.101.4",
+      "dstport": "443",
+      "srcuser": "dev"
+    },
+    "full_log": "flow src=172.21.0.4:51822 dst=185.220.101.4:443 proto=TCP bytes_out=2254857830 bytes_in=81920 duration=241s user=dev process=/usr/bin/curl\nprior 30 days: web-01 never contacted 185.220.101.4; dev normally sends < 5 MB/day\nfiles read by the process just before the transfer: /home/dev/projects/customers.tar.gz (2.1 GB)"
+  },
+  {
+    "_id": "lab-08",
+    "timestamp": "2026-10-18T16:23:00Z",
+    "rule": {
+      "id": "2833",
+      "description": "New crontab entry for dev starts /tmp/.cache/xmrig at every boot",
+      "level": 10,
+      "groups": [
+        "syscheck",
+        "cron",
+        "demo_lab"
+      ]
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcuser": "dev",
+      "file": "/var/spool/cron/crontabs/dev",
+      "process": {
+        "name": "/tmp/.cache/xmrig"
+      }
+    },
+    "full_log": "New crontab entry for dev starts /tmp/.cache/xmrig at every boot"
+  },
+  {
+    "_id": "lab-02",
+    "timestamp": "2026-10-18T16:22:00Z",
+    "rule": {
+      "id": "100201",
+      "description": "Unexpected script /tmp/payload.sh started by dev from a world-writable directory",
+      "level": 10,
+      "groups": [
+        "process_monitor",
+        "demo_lab"
+      ],
+      "mitre": {
+        "id": [
+          "T1059.004"
+        ],
+        "technique": [
+          "Unix Shell"
+        ],
+        "tactic": [
+          "Execution"
+        ]
+      }
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcuser": "dev",
+      "process": {
+        "name": "/tmp/payload.sh"
+      }
+    },
+    "full_log": "Unexpected script /tmp/payload.sh started by dev from a world-writable directory"
+  },
+  {
+    "_id": "lab-03",
+    "timestamp": "2026-10-18T16:21:00Z",
+    "rule": {
+      "id": "550",
+      "description": "SSH authorized_keys of alice changed: key attacker@203.0.113.66 added",
+      "level": 10,
+      "groups": [
+        "syscheck",
+        "ossec",
+        "demo_lab"
+      ],
+      "mitre": {
+        "id": [
+          "T1098.004"
+        ],
+        "technique": [
+          "SSH Authorized Keys"
+        ],
+        "tactic": [
+          "Persistence"
+        ]
+      }
+    },
+    "agent": {
+      "id": "021",
+      "name": "web-01",
+      "ip": "172.21.0.4"
+    },
+    "manager": {
+      "name": "wazuh-manager"
+    },
+    "location": "/var/log/auth.log",
+    "data": {
+      "srcip": "203.0.113.66",
+      "dstuser": "alice",
+      "file": "/home/alice/.ssh/authorized_keys"
+    },
+    "full_log": "SSH authorized_keys of alice changed: key attacker@203.0.113.66 added"
+  }
+]

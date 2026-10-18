@@ -1,0 +1,51 @@
+# SOARCA (github.com/COSSAS/SOARCA), the open-source CACAO 2.0 orchestrator by TNO,
+# run NEXT TO AI4SOAR, not as part of it. AI4SOAR reaches it at SOARCA_URL.
+#
+#   docker compose -f docker-compose.soarca.yml up -d --build
+#
+# soarca          the orchestrator (REST API on 127.0.0.1:8082); no database: execution
+#                 reports are kept in memory, enough for running and inspecting playbooks
+# soarca-sandbox  a throwaway SSH host: SOARCA dry runs echo each command there
+#                 (172.30.250.10), and Shuffle runs the demo firewall step there
+#                 (172.17.0.1:2223, iptables in the container only); no real machine is touched
+services:
+  soarca:
+    image: cossas/soarca:1.1.0
+    container_name: soarca
+    environment:
+      PORT: 8080
+      GIN_MODE: release
+      DATABASE: "false"
+      LOG_GLOBAL_LEVEL: info
+      LOG_MODE: production
+      LOG_FORMAT: json
+      MAX_EXECUTIONS: "50"
+    ports:
+      - 127.0.0.1:8082:8080
+    networks: [soarca-net]
+    restart: unless-stopped
+
+  soarca-sandbox:
+    build:
+      context: deploy/soarca-sandbox
+      args:
+        SANDBOX_PASSWORD: ${SOARCA_SANDBOX_PASSWORD:?set SOARCA_SANDBOX_PASSWORD in .env}
+    image: ai4soar/soarca-sandbox:latest
+    container_name: soarca-sandbox
+    hostname: fw-sandbox
+    # Its own firewall for the demo block step (iptables here touches only this container)
+    cap_add: [NET_ADMIN]
+    # Shuffle's apps reach it at the docker host address; not exposed to the internet
+    ports:
+      - 172.17.0.1:2223:22
+    networks:
+      soarca-net:
+        # SOARCA's ssh module connects to ipv4 addresses only (no host names)
+        ipv4_address: 172.30.250.10
+    restart: unless-stopped
+
+networks:
+  soarca-net:
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24

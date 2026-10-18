@@ -1,0 +1,104 @@
+# Self-contained AI4SOAR stack for running on your own machine (Linux, macOS, Windows):
+# AI4SOAR, MongoDB, NATS and Kafka.
+#
+#   cp .env.example .env        # set your LLM key and SHUFFLE_API_TOKEN
+#   docker compose -f docker-compose.local.yml up -d --build
+#   open http://localhost:5000
+#
+# Shuffle is NOT part of this stack — install it from its own repository
+# (see docs/INSTALL.md). AI4SOAR reaches it through the host at
+# host.docker.internal:5001, Shuffle's default backend port.
+
+x-ai4soar-image: &ai4soar-image
+  build: .
+  image: ai4soar:latest
+  env_file: .env
+  extra_hosts:
+    # Built in on Docker Desktop; needed on Linux
+    - "host.docker.internal:host-gateway"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      # Publish test alerts from your machine, e.g.:
+      #   nats pub ai4soar.alerts "$(cat my_alert.json)"
+      - "127.0.0.1:${NATS_HOST_PORT:-4222}:4222"
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka-native:3.8.0
+    ports:
+      # From your machine: localhost:9094. Other containers: kafka:9092
+      - "127.0.0.1:${KAFKA_HOST_PORT:-9094}:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9094}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
+
+  # One-shot: loads the 37 benchmark alerts into MongoDB (idempotent upsert),
+  # so the Alerts page has something to orchestrate on first start.
+  seed:
+    <<: *ai4soar-image
+    command: ["python3", "scripts/load_benchmark_alerts.py"]
+    environment:
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: "27017"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+  ai4soar:
+    <<: *ai4soar-image
+    ports:
+      - "${AI4SOAR_PORT:-5000}:5000"
+    environment:
+      # Container-network addresses; these override the localhost values in .env
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "5000"
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: "27017"
+      NATS_HOST: nats
+      NATS_PORT: "4222"
+      KAFKA_BROKERS: ${KAFKA_BROKERS_DOCKER:-kafka:9092}
+      SHUFFLE_API_BASE_URL: ${SHUFFLE_API_BASE_URL_DOCKER:-http://host.docker.internal:5001/api/v1}
+      OLLAMA_HOST: host.docker.internal
+    volumes:
+      - ./output:/app/output
+      - ./playbooks:/app/playbooks      # templates edited in the UI are saved here
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      kafka:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  kafka-data:

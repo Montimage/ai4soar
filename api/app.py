@@ -56,6 +56,16 @@ def create_app():
     app.register_blueprint(verification_bp)
     app.register_blueprint(encoding_bp)
     app.register_blueprint(recommendations_bp)
+
+    # Example alerts (data/example_alerts.json): the missing ones are added to MongoDB
+    if os.getenv("EXAMPLE_ALERTS", "true").strip().lower() not in ("0", "false", "no"):
+        try:
+            from core.database import example_alerts
+            n = example_alerts.load()
+            if n:
+                logger.info(f"Loaded {n} example alert(s) into MongoDB")
+        except Exception as e:      # MongoDB down: the app still starts
+            logger.warning(f"Example alerts not loaded: {e}")
     from api.routes.incidents import incidents_bp
     app.register_blueprint(incidents_bp)
 

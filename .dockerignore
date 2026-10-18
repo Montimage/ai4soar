@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+.env
+.env.*
+**/__pycache__
+*.py[cod]
+# Large training/eval corpora, not read at runtime (datasets/eval is, by the seed step)
+datasets/otrf_normalized.jsonl
+datasets/suricata.csv
+output
+shuffle-apps
+shuffle-database
+shuffle-files
+Dockerfile
+docker-compose*.yml

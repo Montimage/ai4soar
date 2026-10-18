@@ -1,0 +1,24 @@
+# Demo lab, run NEXT TO AI4SOAR (not part of it):
+#
+#   docker compose -f docker-compose.lab.yml --env-file .env up -d --build
+#
+# demo-victim  an empty Debian server ("web-01") the playbooks really run on: iptables,
+#              usermod, pkill... all act inside this container only. Shuffle reaches it at
+#              the docker host address 172.17.0.1:2224 (not exposed to the internet).
+#              AI4SOAR sends a workflow's SSH steps here when DEMO_VICTIM_HOST is set.
+#              A clean machine again (rules, locked accounts, killed processes undone):
+#                docker compose -f docker-compose.lab.yml --env-file .env up -d --force-recreate
+services:
+  demo-victim:
+    build:
+      context: deploy/demo-victim
+      args:
+        VICTIM_PASSWORD: ${DEMO_VICTIM_PASSWORD:?set DEMO_VICTIM_PASSWORD in .env}
+    image: ai4soar/demo-victim:latest
+    container_name: demo-victim
+    hostname: web-01
+    # its own firewall; root sees every process's open files (fuser), as on a real host
+    cap_add: [NET_ADMIN, SYS_PTRACE]
+    ports:
+      - 172.17.0.1:2224:22
+    restart: unless-stopped

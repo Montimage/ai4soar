@@ -6,7 +6,7 @@ Usage (run from project root):
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/wazuh_alert_t1021_002.json
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_b_ssh_bruteforce.json
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_c_powershell_tactic.json
-    python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/alert_path_d_setuid_file.json
+    python3 -m core.intelligent_orchestration --alert "data/example_alerts.json#example-path-d-setuid-file"
     python3 -m core.intelligent_orchestration --alert datasets/sample_alerts/wazuh_alert_t1021_002.json --k 3
     python3 -m core.intelligent_orchestration --json   # machine-readable output
     python3 -m core.intelligent_orchestration --no-save  # skip writing output file
@@ -30,11 +30,12 @@ from core.intelligent_orchestration.enrichment.pipeline import EnrichmentPipelin
 from core.intelligent_orchestration.orchestrator import PlaybookOrchestrator
 from core.playbook_verification.verifier import PlaybookVerifier
 
+# "<file>#<_id>" picks one alert of a JSON list: the example alerts shipped in data/
 _SAMPLES = {
-    "A": "datasets/sample_alerts/wazuh_alert_t1021_002.json",
-    "B": "datasets/sample_alerts/alert_path_b_ssh_bruteforce.json",
+    "A": "data/example_alerts.json#example-ssh-bruteforce-vps",
+    "B": "data/example_alerts.json#lab-06",
     "C": "datasets/sample_alerts/alert_path_c_powershell_tactic.json",
-    "D": "datasets/sample_alerts/alert_path_d_setuid_file.json",
+    "D": "data/example_alerts.json#example-path-d-setuid-file",
 }
 
 _OUTPUT_DIR   = "output/cacao"
@@ -78,12 +79,18 @@ def _save(alert_path: str, alert: dict, result_dict: dict, elapsed_ms: float, ve
 
 
 def _run(alert_path: str, k: int, as_json: bool, save: bool) -> None:
+    alert_path, _, alert_id = alert_path.partition("#")
     if not os.path.exists(alert_path):
         print(f"Error: file not found — {alert_path}", file=sys.stderr)
         sys.exit(1)
 
     with open(alert_path) as f:
         alert = json.load(f)
+    if alert_id:
+        alert = next((a for a in alert if a.get("_id") == alert_id), None)
+        if alert is None:
+            print(f"Error: no alert '{alert_id}' in {alert_path}", file=sys.stderr)
+            sys.exit(1)
 
     pipeline     = EnrichmentPipeline()
     orchestrator = PlaybookOrchestrator()
@@ -207,7 +214,7 @@ def main() -> None:
     parser.add_argument(
         "--alert",
         default=_SAMPLES["A"],
-        help="Path to alert JSON file (default: wazuh_alert_t1021_002.json)",
+        help="Alert JSON file, or <file>#<_id> for one alert of a list (default: the Path A example)",
     )
     parser.add_argument("--k",       type=int, default=5,    help="Max playbooks (default 5)")
     parser.add_argument("--json",    action="store_true",    help="Output raw JSON")
