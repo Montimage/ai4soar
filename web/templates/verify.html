@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h4 class="mb-0 fw-bold">Playbook Verification</h4>
-    <small class="text-muted">Validate CACAO 2.0, Shuffle, or internal playbooks — spec + structure + LLM semantic check</small>
+    <small class="text-muted">Validate CACAO 2.0, Shuffle, or internal playbooks (CACAO compliance, structure, commands, optional LLM review)</small>
   </div>
 </div>
 
@@ -46,8 +46,9 @@
                         style="font-size:.82rem; resize:vertical"></textarea>
             </div>
             <div class="d-flex gap-2">
-              <button class="btn btn-sm btn-outline-primary" onclick="loadExample('cacao')">
-                <i class="bi bi-file-earmark-code me-1"></i>CACAO example
+              <button class="btn btn-sm btn-outline-primary" onclick="loadExample()"
+                      title="Load a random example playbook: valid, or with problems for each group of checks">
+                <i class="bi bi-shuffle me-1"></i>CACAO examples
               </button>
               <button class="btn btn-sm btn-outline-primary ms-auto" onclick="formatJson()">
                 <i class="bi bi-braces me-1"></i>Format
@@ -82,7 +83,7 @@
           <div class="form-check form-switch mb-0">
             <input class="form-check-input" type="checkbox" id="use-llm">
             <label class="form-check-label small" for="use-llm">
-              Use LLM <span class="text-muted">(semantic check)</span>
+              LLM review <span class="text-muted">(commands real, match the step, safe, in order)</span>
             </label>
           </div>
         </div>
@@ -116,31 +117,10 @@
         <!-- Results -->
         <div id="result-body" class="d-none">
 
-          <!-- Score row -->
-          <div class="d-flex align-items-center gap-3 mb-4">
-            <div class="text-center" style="min-width:80px">
-              <div class="fw-bold" id="score-label" style="font-size:2rem">—</div>
-              <div class="text-muted small">/ 100</div>
-            </div>
-            <div class="flex-grow-1">
-              <div class="progress mb-1" style="height:10px">
-                <div id="score-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
-              </div>
-              <div id="pass-badge"></div>
-            </div>
-          </div>
-
-          <!-- Issues grouped by category -->
-          <div id="issues-spec"       class="mb-3"></div>
-          <div id="issues-structural" class="mb-3"></div>
-          <div id="issues-safety"     class="mb-3"></div>
-          <div id="issues-llm"        class="mb-3"></div>
-
-          <!-- All-clear -->
-          <div id="all-clear" class="d-none text-center py-3">
-            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
-            <div class="text-success fw-semibold">No issues found — playbook is valid.</div>
-          </div>
+          <!-- Overview: verdict and how many criteria passed -->
+          <div class="d-flex flex-wrap align-items-center gap-3 mb-3 pb-3 border-bottom" id="verdict"></div>
+          <!-- One block per group: every criterion, its status, and its issues -->
+          <div id="criteria"></div>
         </div>
 
       </div><!-- /card-body -->
@@ -218,41 +198,22 @@ function clearInput() {
   resetResults();
 }
 
-function loadExample(fmt) {
-  // A complete, valid CACAO 2.0 playbook (passes the official schema): identifiers are
-  // "<type>--<uuid>", there is a start step, every action names its agent.
-  const id = type => `${type}--${crypto.randomUUID()}`;
-  const start = id('start'), block = id('action'), end = id('end'), runner = id('linux');
-  const now = new Date().toISOString();
-  const example = {
-    type: "playbook",
-    spec_version: "cacao-2.0",
-    id: id('playbook'),
-    name: "Example: block an attacker IP",
-    description: "Drop traffic from 203.0.113.9 at the gateway and record it",
-    created_by: "identity--c8bde83a-ff38-57ad-bec8-7f3775beb1e4",
-    created: now,
-    modified: now,
-    agent_definitions: {
-      [runner]: { type: "linux", name: "Playbook runner (network gateway)", address: { ipv4: ["127.0.0.1"] } }
-    },
-    workflow_start: start,
-    workflow: {
-      [start]: { type: "start", on_completion: block },
-      [block]: {
-        type: "action",
-        name: "Block 203.0.113.9 at the firewall",
-        agent: runner,
-        commands: [{
-          type: "bash",
-          command: "iptables -I FORWARD -s 203.0.113.9 -j DROP && echo \"BLOCKED 203.0.113.9\" >> /var/log/ai4soar_blocks.log"
-        }],
-        on_completion: end
-      },
-      [end]: { type: "end" }
-    }
-  };
-  document.getElementById('playbook-json').value = JSON.stringify(example, null, 2);
+/* A random playbook from web/static/examples/ (valid ones and ones with known problems),
+   never the same twice in a row; the toast says what the verification should find. */
+let lastExample = null;
+async function loadExample() {
+  try {
+    const base = "{{ url_for('web.static', filename='examples/') }}";
+    const list = await (await fetch(base + 'index.json')).json();
+    const pool = list.filter(e => e.file !== lastExample);
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const pb = await (await fetch(base + pick.file)).json();
+    lastExample = pick.file;
+    document.getElementById('playbook-json').value = JSON.stringify(pb, null, 2);
+    showToast(`Example: ${escHtml(pick.title)}. Expected: ${escHtml(pick.expect)}`, 'info');
+  } catch (e) {
+    showToast('Could not load an example: ' + e.message, 'error');
+  }
 }
 
 /* ── Verification ── */
@@ -277,12 +238,13 @@ async function runVerification() {
       is_template:     libraryActive,
     });
     if (handedOverOptional && JSON.stringify(parsed) === handedOverOptional.json)
-      qs.set('optional_params', handedOverOptional.params.join(','));
+    { qs.set('optional_params', handedOverOptional.params.join(','));
+      qs.set('secret_params', (handedOverOptional.secret || []).join(',')); }
     const result = await apiFetch(`/verify_playbook?${qs}`, {
       method: 'POST',
       body: JSON.stringify(parsed),
     });
-    renderResults(result, !useLLM);
+    renderResults(result);
   } catch (e) {
     document.getElementById('result-idle').innerHTML =
       `<div class="alert alert-danger">${escHtml(e.message)}</div>`;
@@ -301,89 +263,72 @@ function resetResults() {
   show('result-idle');
 }
 
-function renderResults(r, structOnly) {
-  const score  = r.overall_score ?? 100;
-  const passed = r.passed ?? (score >= 60);
+/* Overview = verdict + criteria counts; then every criterion of every group with its
+   status, so it is visible what was checked (also when it passed or was skipped). */
+const STATUS = {
+  pass:    ['bi-check-circle-fill',        'text-success',   'passed'],
+  info:    ['bi-info-circle-fill',         'text-info',      'note'],
+  warning: ['bi-exclamation-triangle-fill','text-warning',   'warning'],
+  error:   ['bi-x-circle-fill',            'text-danger',    'failed'],
+  skipped: ['bi-dash-circle',              'text-muted',     'not run'],
+};
+const VERDICT = {
+  passed:   ['success', 'bi-patch-check-fill',        'Passed'],
+  warnings: ['warning', 'bi-exclamation-triangle-fill','Passed with warnings'],
+  failed:   ['danger',  'bi-x-octagon-fill',          'Failed'],
+};
 
-  // Score bar
-  document.getElementById('score-label').textContent = score;
-  const bar = document.getElementById('score-bar');
-  bar.style.width   = score + '%';
-  bar.className     = 'progress-bar ' + (score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-danger');
+function renderResults(r) {
+  const [cls, icon, text] = VERDICT[r.verdict] || VERDICT.passed;
+  const sm = r.summary || {};
+  const parts = [
+    sm.warning ? `${sm.warning} warning${sm.warning > 1 ? 's' : ''}` : '',
+    sm.error ? `${sm.error} failed` : '',
+    sm.skipped ? `${sm.skipped} not run` : '',
+  ].filter(Boolean).join(' · ');
+  document.getElementById('verdict').innerHTML = `
+    <span class="badge bg-${cls} fs-6 fw-semibold px-3 py-2"><i class="bi ${icon} me-1"></i>${text}</span>
+    <div class="small">
+      <div class="fw-semibold">${sm.ok ?? 0} of ${sm.run ?? 0} criteria passed</div>
+      ${parts ? `<div class="text-muted">${parts}</div>` : ''}
+    </div>`;
 
-  document.getElementById('pass-badge').innerHTML = passed
-    ? '<span class="badge bg-success"><i class="bi bi-check-lg me-1"></i>PASSED</span>'
-    : '<span class="badge bg-danger"><i class="bi bi-x-lg me-1"></i>FAILED</span>';
-
-  // LLM outcome is shown once, in the "LLM Semantic" group: skipped, failed, or its issues
-  const llmError = String(r.llm_checked || '').startsWith('error') ? r.llm_checked : '';
-
-  // Group issues: by the verifier's category; description matching is only the
-  // fallback for issues without one
-  const allIssues = r.issues || [];
-  const byCat = cats => allIssues.filter(i => cats.includes(i.category));
-  if (allIssues.every(i => i.category)) {
-    renderIssueGroup('issues-spec',       'Spec Compliance (incl. official CACAO schema)', byCat(['spec', 'schema']));
-    renderIssueGroup('issues-structural', 'Structural',    byCat(['structural']));
-    renderIssueGroup('issues-safety',     'Safety Policy', byCat(['safety']));
-    renderIssueGroup('issues-llm',        'LLM Semantic',  byCat(['llm']), structOnly, llmError);
-    document.getElementById('all-clear').classList.toggle('d-none', allIssues.length > 0);
-    show('result-body');
-    return;
-  }
-  document.getElementById('issues-safety').innerHTML = '';
-  const spec       = allIssues.filter(i =>
-    i.description.includes('CACAO') || i.description.includes('UUID') ||
-    i.description.includes('placeholder') || i.description.includes('Missing required') ||
-    i.description.includes("'type'") || i.description.includes("'spec_version'") ||
-    i.description.includes("'id'") || i.description.includes("workflow_start") ||
-    i.description.includes("references unknown"));
-  const structural = allIssues.filter(i => !spec.includes(i) && (
-    i.description.includes('cycle') || i.description.includes('start node') ||
-    i.description.includes('end node') || i.description.includes('unreachable') ||
-    i.description.includes('dead') || i.description.includes("Step '")));
-  const llm        = allIssues.filter(i => !spec.includes(i) && !structural.includes(i));
-
-  renderIssueGroup('issues-spec',       'Spec Compliance',  spec);
-  renderIssueGroup('issues-structural', 'Structural',       structural);
-  renderIssueGroup('issues-llm',        'LLM Semantic',     llm, structOnly, llmError);
-
-  document.getElementById('all-clear').classList.toggle('d-none', allIssues.length > 0);
+  const issues = r.issues || [];
+  document.getElementById('criteria').innerHTML = (r.criteria || []).map(g => {
+    const bad = g.criteria.filter(c => c.status === 'error' || c.status === 'warning').length;
+    const ran = g.criteria.filter(c => c.status !== 'skipped').length;
+    const head = !ran ? '<span class="text-muted">not run</span>'
+      : bad ? `<span class="text-${g.criteria.some(c => c.status === 'error') ? 'danger' : 'warning'}">${bad} to review</span>`
+      : '<span class="text-success">all passed</span>';
+    return `
+      <div class="border rounded mb-3">
+        <div class="d-flex align-items-center px-3 py-2 border-bottom" style="background:#f6f8fa">
+          <span class="small fw-semibold text-uppercase text-muted" style="letter-spacing:.5px;font-size:.7rem">${escHtml(g.label)}</span>
+          <span class="ms-auto small">${head}</span>
+        </div>
+        <div class="px-3 py-2">${g.criteria.map(c => criterionHtml(c, issues.filter(i => i.check === c.id))).join('')}</div>
+      </div>`;
+  }).join('');
   show('result-body');
 }
 
-function renderIssueGroup(elId, label, issues, skipped = false, error = '') {
-  const el = document.getElementById(elId);
-  const SEV_CLS = { error: 'danger', warning: 'warning', info: 'info' };
-
-  let content;
-  if (skipped) {
-    content = `<div class="text-muted small fst-italic">Skipped — enable LLM check to run semantic validation.</div>`;
-  } else if (error) {
-    content = `<div class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>LLM check failed: ${escHtml(error.replace(/^error:\s*/, ''))}</div>`;
-  } else if (!issues.length) {
-    content = `<div class="text-success small"><i class="bi bi-check-circle me-1"></i>No issues found.</div>`;
-  } else {
-    content = issues.map(i => {
-      const cls  = SEV_CLS[i.severity] || 'secondary';
-      const node = i.node_id ? `<code class="text-muted ms-2" style="font-size:.7rem">${escHtml(i.node_id)}</code>` : '';
-      return `
-        <div class="d-flex align-items-start gap-2 mb-2">
-          <span class="badge bg-${cls} flex-shrink-0 mt-1" style="font-size:.65rem">${(i.severity||'info').toUpperCase()}</span>
-          <div class="small">
-            ${escHtml(i.description)}${node}
-            <span class="text-muted ms-2" style="font-size:.7rem">score impact: ${i.score}</span>
-          </div>
-        </div>`;
-    }).join('');
-  }
-
-  el.innerHTML = `
-    <div class="mb-1 small fw-semibold text-muted text-uppercase" style="letter-spacing:.5px;font-size:.7rem">
-      ${label}
-      ${!skipped && !error ? `<span class="badge bg-secondary ms-1 fw-normal">${issues.length}</span>` : ''}
-    </div>
-    ${content}`;
+function criterionHtml(c, issues) {
+  const [icon, cls, word] = STATUS[c.status] || STATUS.pass;
+  const SEV = { error: 'danger', warning: 'warning', info: 'info' };
+  return `
+    <div class="py-1">
+      <div class="d-flex align-items-baseline gap-2 small">
+        <i class="bi ${icon} ${cls}" title="${word}"></i>
+        <span class="${c.status === 'skipped' ? 'text-muted' : 'fw-semibold'}">${escHtml(c.label)}</span>
+        <span class="text-muted text-truncate" style="font-size:.72rem" title="${escHtml(c.checks)}">${escHtml(c.checks)}</span>
+        ${c.note ? `<span class="text-muted ms-auto flex-shrink-0 fst-italic" style="font-size:.72rem">${escHtml(c.note)}</span>` : ''}
+      </div>
+      ${issues.map(i => `
+        <div class="ms-4 mt-1 ps-2 border-start border-2 border-${SEV[i.severity] || 'secondary'}" style="font-size:.78rem">
+          ${escHtml(i.description)}
+          ${i.line ? `<pre class="mb-0 mt-1 px-2 py-1 rounded" style="background:#f6f8fa;font-size:.72rem;white-space:pre-wrap">${escHtml(i.line)}</pre>` : ''}
+        </div>`).join('')}
+    </div>`;
 }
 
 function show(id) { document.getElementById(id).classList.remove('d-none'); }
@@ -409,8 +354,8 @@ let handedOverOptional = null;
   } catch (_) { return; }
   if (!item || !item.cacao) return;
   document.getElementById('playbook-json').value = JSON.stringify(item.cacao, null, 2);
-  handedOverOptional = { json: JSON.stringify(item.cacao), params: item.optional || [] };
-  showToast(`Loaded "${escHtml(item.name)}" from Orchestration. Tick the LLM check for a semantic review, then Verify.`, 'info');
+  handedOverOptional = { json: JSON.stringify(item.cacao), params: item.optional || [], secret: item.secret || [] };
+  showToast(`Loaded "${escHtml(item.name)}" from Orchestration. Tick LLM review to check the commands themselves, then Run Verification.`, 'info');
 })();
 </script>
 {% endblock %}

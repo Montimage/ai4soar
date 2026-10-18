@@ -1,0 +1,92 @@
+{
+  "type": "playbook",
+  "spec_version": "cacao-2.0",
+  "id": "playbook--424af965-ff9a-4e53-9021-a5adfa53d8b0",
+  "name": "Broken workflow: dangling link and a loop",
+  "description": "Structure errors on purpose: a link to a step that does not exist, a loop, no created_by.",
+  "playbook_types": [
+    "remediation"
+  ],
+  "created": "2026-10-18T09:00:00Z",
+  "modified": "2026-10-18T09:00:00Z",
+  "agent_definitions": {
+    "linux--bd446d46-5cda-4297-aa19-a159eb4be5df": {
+      "type": "linux",
+      "name": "AI4SOAR / Shuffle",
+      "address": {
+        "ipv4": [
+          "127.0.0.1"
+        ]
+      }
+    }
+  },
+  "target_definitions": {
+    "ssh--21968540-1255-4afc-9136-0996e0f7b4b0": {
+      "type": "ssh",
+      "name": "web-01",
+      "address": {
+        "dname": [
+          "web-01"
+        ]
+      }
+    }
+  },
+  "workflow_start": "start--bd3c9b42-c2ed-44b1-b3bd-7ec1a1227843",
+  "workflow": {
+    "start--bd3c9b42-c2ed-44b1-b3bd-7ec1a1227843": {
+      "type": "start",
+      "on_completion": "action--ca8de4b6-302e-4d48-88d2-d40c2d6bf972"
+    },
+    "action--ca8de4b6-302e-4d48-88d2-d40c2d6bf972": {
+      "type": "action",
+      "name": "Collect running processes",
+      "description": "Save the process list.",
+      "agent": "linux--bd446d46-5cda-4297-aa19-a159eb4be5df",
+      "targets": [
+        "ssh--21968540-1255-4afc-9136-0996e0f7b4b0"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "ps auxf > /root/procs.txt"
+        }
+      ],
+      "on_completion": "action--d585d487-d2b6-49b1-a1ec-44a67b2c37e8"
+    },
+    "action--d585d487-d2b6-49b1-a1ec-44a67b2c37e8": {
+      "type": "action",
+      "name": "Collect open connections",
+      "description": "Save the open connections.",
+      "agent": "linux--bd446d46-5cda-4297-aa19-a159eb4be5df",
+      "targets": [
+        "ssh--21968540-1255-4afc-9136-0996e0f7b4b0"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "ss -tanp > /root/conns.txt"
+        }
+      ],
+      "on_completion": "action--ca8de4b6-302e-4d48-88d2-d40c2d6bf972"
+    },
+    "action--b6a170c8-7212-44ac-b739-f19bf42dd392": {
+      "type": "action",
+      "name": "Archive the evidence",
+      "description": "Pack the evidence files.",
+      "agent": "linux--bd446d46-5cda-4297-aa19-a159eb4be5df",
+      "targets": [
+        "ssh--21968540-1255-4afc-9136-0996e0f7b4b0"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "tar czf /root/evidence.tgz /root/procs.txt /root/conns.txt"
+        }
+      ],
+      "on_completion": "action--00000000-0000-4000-8000-000000000000"
+    },
+    "end--526b481a-a923-4e50-9cbc-99ab9808c82e": {
+      "type": "end"
+    }
+  }
+}

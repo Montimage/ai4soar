@@ -1,0 +1,81 @@
+{
+  "type": "playbook",
+  "spec_version": "cacao-2.0",
+  "id": "playbook--07fcfad8-6ba1-4e45-a60e-4b1eb696d05b",
+  "name": "Block SSH brute force from 203.0.113.9 on web-01",
+  "description": "Block the attacking address on the targeted host, keep a record, and list the failed logins.",
+  "playbook_types": [
+    "remediation"
+  ],
+  "created_by": "identity--c8bde83a-ff38-57ad-bec8-7f3775beb1e4",
+  "created": "2026-10-18T09:00:00Z",
+  "modified": "2026-10-18T09:00:00Z",
+  "agent_definitions": {
+    "linux--a1fa14c5-4f00-44a3-9d76-2ea4355b066d": {
+      "type": "linux",
+      "name": "AI4SOAR / Shuffle",
+      "address": {
+        "ipv4": [
+          "127.0.0.1"
+        ]
+      }
+    }
+  },
+  "target_definitions": {
+    "ssh--84a58433-9469-4884-ad4b-fe39e9bc9e33": {
+      "type": "ssh",
+      "name": "web-01",
+      "address": {
+        "dname": [
+          "web-01"
+        ]
+      }
+    }
+  },
+  "workflow_start": "start--caa4f84d-c8eb-4420-95b9-3a40f35cc491",
+  "workflow": {
+    "start--caa4f84d-c8eb-4420-95b9-3a40f35cc491": {
+      "type": "start",
+      "on_completion": "action--df8b4994-51e2-4bea-9615-bec273299771"
+    },
+    "action--df8b4994-51e2-4bea-9615-bec273299771": {
+      "type": "action",
+      "name": "Block 203.0.113.9 on web-01",
+      "description": "Drop all traffic from the attacker on the host firewall.",
+      "agent": "linux--a1fa14c5-4f00-44a3-9d76-2ea4355b066d",
+      "targets": [
+        "ssh--84a58433-9469-4884-ad4b-fe39e9bc9e33"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "iptables -I INPUT -s 203.0.113.9 -j DROP"
+        },
+        {
+          "type": "bash",
+          "command": "echo \"$(date -u +%FT%TZ) BLOCKED 203.0.113.9\" >> /var/log/ai4soar_blocks.log"
+        }
+      ],
+      "on_completion": "action--e2588a23-b313-4f58-ae2d-e1d448bb405b"
+    },
+    "action--e2588a23-b313-4f58-ae2d-e1d448bb405b": {
+      "type": "action",
+      "name": "List failed logins from 203.0.113.9",
+      "description": "Collect the failed SSH logins of the attacker as evidence.",
+      "agent": "linux--a1fa14c5-4f00-44a3-9d76-2ea4355b066d",
+      "targets": [
+        "ssh--84a58433-9469-4884-ad4b-fe39e9bc9e33"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "grep \"Failed password\" /var/log/auth.log | grep -F \"from 203.0.113.9 port\" | tail -50"
+        }
+      ],
+      "on_completion": "end--d35cb253-e360-4dda-aecc-d478c8bcf83d"
+    },
+    "end--d35cb253-e360-4dda-aecc-d478c8bcf83d": {
+      "type": "end"
+    }
+  }
+}

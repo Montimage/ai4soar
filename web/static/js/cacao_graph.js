@@ -8,6 +8,8 @@
  * Public API:
  *   CacaoGraph.render(cacao)            → { svg, steps, order }
  *   CacaoGraph.stepDetailHtml(cacao, id) → HTML for one step's contents
+ *   CacaoGraph.openModal(pb, {onSave})   → the Workflow view; with onSave, an Edit mode
+ *                                          that changes nodes and hands back the playbook
  */
 const CacaoGraph = (() => {
   'use strict';
@@ -465,6 +467,10 @@ const CacaoGraph = (() => {
   // Graph modal (markup in templates/_cacao_graph_modal.html)
   // -------------------------------------------------------------------------
   let modalPlaybook = null;
+  let modalOpts = {};
+  let draft = null;          // working copy of the CACAO while in Edit mode
+  let dirty = false;
+  let selectedStep = null;
 
   /* "cacao-2.0" → "CACAO 2.0" */
   function specVersion(pb) {
@@ -475,32 +481,266 @@ const CacaoGraph = (() => {
   /* `pb` is either a library template ({id, name, version, parameters, cacao}) or a
      recommended playbook already filled from an alert ({id, name, cacao,
      parameters_filled, parameters_missing}). */
-  function openModal(pb) {
+  function openModal(pb, opts = {}) {
     if (!pb) return;
     modalPlaybook = pb;
+    modalOpts = opts || {};
+    draft = null; dirty = false;
     document.getElementById('graph-title').textContent = pb.name || pb.id;
     document.getElementById('graph-id').textContent    = pb.id;
+    setEditButtons();
+    note('');
 
-    const { svg, order } = render(pb.cacao || {});
+    const order = drawGraph();
+    // Open on the entry step so the panel is never empty.
+    selectModalStep((pb.cacao || {}).workflow_start || order[0]);
+    const el = document.getElementById('graphModal');
+    if (!el.dataset.editGuard) {          // once: do not lose unsaved edits on close
+      el.dataset.editGuard = '1';
+      el.addEventListener('hide.bs.modal', e => {
+        if (draft && dirty && !confirm('Discard the unsaved changes to this playbook?')) {
+          e.preventDefault();
+          return;
+        }
+        draft = null; dirty = false;
+      });
+    }
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  }
+
+  function shown() { return draft || (modalPlaybook && modalPlaybook.cacao) || {}; }
+
+  function drawGraph() {
+    const { svg, order } = render(shown());
     const canvas = document.getElementById('graph-canvas');
     canvas.innerHTML = svg;
     canvas.querySelectorAll('.cacao-node').forEach(node => {
       node.addEventListener('click', () => selectModalStep(node.dataset.step));
     });
-
-    renderModalMeta(pb);
-    // Open on the entry step so the panel is never empty.
-    selectModalStep((pb.cacao || {}).workflow_start || order[0]);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('graphModal')).show();
+    canvas.querySelectorAll('.cacao-node').forEach(n => {
+      n.classList.toggle('cacao-node-active', n.dataset.step === selectedStep);
+    });
+    renderModalMeta({ ...modalPlaybook, cacao: shown() });
+    return order;
   }
 
   function selectModalStep(stepId) {
     if (!modalPlaybook || !stepId) return;
-    document.getElementById('graph-detail').innerHTML =
-      stepDetailHtml(modalPlaybook.cacao || {}, stepId);
+    selectedStep = stepId;
+    document.getElementById('graph-detail').innerHTML = draft
+      ? stepEditHtml(draft, stepId) : stepDetailHtml(modalPlaybook.cacao || {}, stepId);
     document.querySelectorAll('#graph-canvas .cacao-node').forEach(n => {
       n.classList.toggle('cacao-node-active', n.dataset.step === stepId);
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Edit mode: change a node's name, description and commands, add or delete
+  // commands and steps. The page's onSave(cacao) decides what saving means.
+  // -------------------------------------------------------------------------
+  const show = (id, on) => document.getElementById(id).classList.toggle('d-none', !on);
+
+  function setEditButtons() {
+    const can = !!modalOpts.onSave;
+    show('graph-edit-btn', can && !draft);
+    show('graph-discard-btn', !!draft);
+    show('graph-save-btn', !!draft);
+  }
+
+  function note(text, kind) {
+    const el = document.getElementById('graph-edit-note');
+    el.textContent = text;
+    el.className = `small ${kind === 'error' ? 'text-danger' : 'text-muted'}${text ? '' : ' d-none'}`;
+  }
+
+  function startEdit() {
+    draft = JSON.parse(JSON.stringify(modalPlaybook.cacao || {}));
+    dirty = false;
+    setEditButtons();
+    note(modalOpts.editNote || 'Editing: click a node to change it');
+    drawGraph();
+    selectModalStep(selectedStep);
+  }
+
+  function discardEdit() {
+    if (dirty && !confirm('Discard the unsaved changes to this playbook?')) return;
+    draft = null; dirty = false;
+    setEditButtons();
+    note('');
+    drawGraph();
+    selectModalStep(selectedStep);
+  }
+
+  async function saveEdit() {
+    const btn = document.getElementById('graph-save-btn');
+    btn.disabled = true;
+    note('Saving…');
+    try {
+      const msg = await modalOpts.onSave(draft);
+      modalPlaybook.cacao = draft;
+      draft = null; dirty = false;
+      setEditButtons();
+      note(msg || 'Saved');
+      drawGraph();
+      selectModalStep(selectedStep);
+    } catch (e) {
+      note(`Not saved: ${e.message || e}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function changed() {
+    dirty = true;
+    note('Unsaved changes');
+  }
+
+  const b64decode = s => { try { return decodeURIComponent(escape(atob(s))); } catch (_) { return ''; } };
+
+  function cmdEditHtml(cmd, i, count) {
+    const type = cmd.type || 'bash';
+    const http = type === 'http-api';
+    const text = cmd.command ?? (cmd.command_b64 ? b64decode(cmd.command_b64) : '');
+    const content = cmd.content ?? (cmd.content_b64 ? b64decode(cmd.content_b64) : '');
+    const rows = Math.min(14, Math.max(3, String(text).split('\n').length + 1));
+    return `
+      <div class="cacao-cmd">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="badge" style="background:${type === 'bash' ? '#24292f' : '#0969da'};color:#fff;font-size:.62rem">${esc(type)}</span>
+          <span class="text-muted" style="font-size:.68rem">command ${i + 1}</span>
+          ${count > 1 ? `<button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto text-decoration-none"
+              style="font-size:.72rem" onclick="CacaoGraph._delCmd(${i})"><i class="bi bi-trash me-1"></i>Remove</button>` : ''}
+        </div>
+        ${http
+          ? `<input class="form-control form-control-sm font-monospace" data-c="${i}:command"
+                    value="${esc(text)}" oninput="CacaoGraph._field(this)" placeholder="POST /path HTTP/1.1">
+             <div class="cacao-sub mt-2">content</div>
+             <textarea class="form-control form-control-sm font-monospace" rows="6" data-c="${i}:content"
+                       oninput="CacaoGraph._field(this)">${esc(content)}</textarea>`
+          : `<textarea class="form-control form-control-sm font-monospace" rows="${rows}" data-c="${i}:command"
+                       oninput="CacaoGraph._field(this)" placeholder="One command per line">${esc(text)}</textarea>`}
+      </div>`;
+  }
+
+  function stepEditHtml(cacao, id) {
+    const step = (cacao.workflow || {})[id];
+    if (!step) return '<div class="text-muted small">Step not found.</div>';
+    const type = step.type || 'action';
+    if (type === 'start' || type === 'end') {
+      return stepDetailHtml(cacao, id)
+        + `<div class="text-muted small mt-3">The ${type} step has nothing to edit: select another node.</div>`;
+    }
+    const cmds = step.commands || [];
+    return `
+      <div class="mb-2 d-flex align-items-center gap-2">
+        <code class="text-muted" style="font-size:.7rem">${esc(id)}</code>
+        <span class="badge bg-secondary" style="font-size:.62rem">${esc(type)}</span>
+      </div>
+      <label class="cacao-sub mb-1">Name</label>
+      <input class="form-control form-control-sm mb-2" data-f="name" value="${esc(step.name || '')}"
+             oninput="CacaoGraph._field(this)">
+      <label class="cacao-sub mb-1">Description</label>
+      <textarea class="form-control form-control-sm mb-2" rows="3" data-f="description"
+                oninput="CacaoGraph._field(this)">${esc(step.description || '')}</textarea>
+      ${type === 'action' ? `
+        <div class="cacao-sub mt-3">Commands${cmds.length > 1
+          ? ' <span class="text-muted text-lowercase fw-normal">· all run, in this order</span>' : ''}</div>
+        ${cmds.map((c, i) => cmdEditHtml(c, i, cmds.length)).join('')}
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="CacaoGraph._addCmd()">
+            <i class="bi bi-plus-lg me-1"></i>Command</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="CacaoGraph._addStep()">
+            <i class="bi bi-node-plus me-1"></i>Step after this one</button>
+          <button type="button" class="btn btn-sm btn-outline-danger ms-auto" onclick="CacaoGraph._delStep()">
+            <i class="bi bi-trash me-1"></i>Delete step</button>
+        </div>` : `
+        <div class="text-muted small mt-3">Only the name and description of a ${esc(type)} step can be edited here.</div>`}`;
+  }
+
+  function editedStep() { return draft && (draft.workflow || {})[selectedStep]; }
+
+  function _field(el) {
+    const step = editedStep();
+    if (!step) return;
+    if (el.dataset.f) {
+      step[el.dataset.f] = el.value;
+      if (el.dataset.f === 'name') drawGraph();      // label in the graph; keeps the form's focus
+    } else if (el.dataset.c) {
+      const [i, key] = el.dataset.c.split(':');
+      const cmd = step.commands[Number(i)];
+      cmd[key] = el.value;
+      delete cmd[`${key}_b64`];
+    }
+    changed();
+  }
+
+  function _addCmd() {
+    const step = editedStep();
+    if (!step) return;
+    (step.commands ||= []).push({ type: 'bash', command: '' });
+    changed();
+    selectModalStep(selectedStep);
+  }
+
+  function _delCmd(i) {
+    const step = editedStep();
+    if (!step || (step.commands || []).length < 2) return;
+    step.commands.splice(i, 1);
+    changed();
+    selectModalStep(selectedStep);
+  }
+
+  const newId = type => `${type}--${crypto.randomUUID ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => (Math.random() * 16 | 0).toString(16))}`;
+
+  /* A new action between this step and the one it continues to, acting on the same
+     machine(s) with the same agent. */
+  function _addStep() {
+    const step = editedStep();
+    if (!step) return;
+    const next = step.on_completion || step.on_success;
+    const id = newId('action');
+    const added = { type: 'action', name: 'New step', description: '',
+                    commands: [{ type: 'bash', command: '' }] };
+    if (step.agent) added.agent = step.agent;
+    if (step.targets) added.targets = [...step.targets];
+    if (next) added.on_completion = next;
+    for (const k of ['on_completion', 'on_success']) if (step[k] === next) step[k] = id;
+    if (!next) step.on_completion = id;
+    // Insert right after the current step, so the YAML/JSON reads in workflow order
+    const wf = {};
+    for (const [k, v] of Object.entries(draft.workflow)) {
+      wf[k] = v;
+      if (k === selectedStep) wf[id] = added;
+    }
+    draft.workflow = wf;
+    changed();
+    selectedStep = id;
+    drawGraph();
+    selectModalStep(id);
+  }
+
+  /* Remove the step; whatever pointed to it now points to the step it continued to. */
+  function _delStep() {
+    const step = editedStep();
+    if (!step) return;
+    const next = step.on_completion || step.on_success || step.on_failure;
+    if (!next) { note('This step has no next step to reconnect to', 'error'); return; }
+    if (!confirm(`Delete the step "${step.name || selectedStep}"?`)) return;
+    const gone = selectedStep;
+    delete draft.workflow[gone];
+    for (const s of Object.values(draft.workflow)) {
+      for (const k of ['on_completion', 'on_success', 'on_failure', 'on_true', 'on_false']) {
+        if (s[k] === gone) s[k] = next;
+      }
+      if (Array.isArray(s.next_steps)) s.next_steps = s.next_steps.map(t => t === gone ? next : t);
+      if (s.cases) for (const c of Object.keys(s.cases)) if (s.cases[c] === gone) s.cases[c] = next;
+    }
+    if (draft.workflow_start === gone) draft.workflow_start = next;
+    changed();
+    selectedStep = next;
+    drawGraph();
+    selectModalStep(next);
   }
 
   function chip(text, title, style) {
@@ -527,9 +767,13 @@ const CacaoGraph = (() => {
       const leftover = [...new Set((JSON.stringify(c).match(/\{\{([^}]+)\}\}/g) || [])
         .map(m => m.slice(2, -2)))].filter(n => !(n in filled) && !missing.includes(n) && !rejected.includes(n));
       paramsTitle = 'Parameters filled from this alert';
+      const settings = pb.parameters_settings || [];
       paramsHtml =
-          Object.entries(filled).map(([k, v]) => chip(`${esc(k)} = ${esc(v)}`, 'From the alert IoCs',
-            'background:#dafbe1;color:#116329;border:1px solid #4ac26b')).join('')
+          Object.entries(filled).map(([k, v]) => settings.includes(k)
+            ? chip(`${esc(k)} = ${esc(v)}`, 'Deployment setting from .env (the same for every alert)',
+                   'background:#f6f8fa;color:#57606a;border:1px solid #d0d7de')
+            : chip(`${esc(k)} = ${esc(v)}`, 'From the alert IoCs',
+                   'background:#dafbe1;color:#116329;border:1px solid #4ac26b')).join('')
         + missing.map(n => chip(`${esc(paramLabel(n))} *`, 'Required, not found in the alert',
             'background:#ffebe9;color:#cf222e;border:1px solid #ff8182')).join('')
         + rejected.map(n => chip(`${esc(paramLabel(n))} rejected`, 'The alert value was unsafe for a shell command and was not used',
@@ -556,5 +800,6 @@ const CacaoGraph = (() => {
          </div>`;
   }
 
-  return { render, stepDetailHtml, escWithParams, paramLabel, openModal, specVersion };
+  return { render, stepDetailHtml, escWithParams, paramLabel, openModal, specVersion,
+           startEdit, discardEdit, saveEdit, _field, _addCmd, _delCmd, _addStep, _delStep };
 })();

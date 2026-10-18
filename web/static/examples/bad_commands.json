@@ -1,0 +1,97 @@
+{
+  "type": "playbook",
+  "spec_version": "cacao-2.0",
+  "id": "playbook--b56dde01-6bf2-4700-8e31-6ca102e8c428",
+  "name": "Contain a cryptominer on app-02 (typos)",
+  "description": "A broken quote, a misspelled program and a line that is not a command.",
+  "playbook_types": [
+    "remediation"
+  ],
+  "created_by": "identity--c8bde83a-ff38-57ad-bec8-7f3775beb1e4",
+  "created": "2026-10-18T09:00:00Z",
+  "modified": "2026-10-18T09:00:00Z",
+  "agent_definitions": {
+    "linux--7ca27588-6a94-4761-9ce9-fc03e6a17afe": {
+      "type": "linux",
+      "name": "AI4SOAR / Shuffle",
+      "address": {
+        "ipv4": [
+          "127.0.0.1"
+        ]
+      }
+    }
+  },
+  "target_definitions": {
+    "ssh--941ad0d2-8999-4a21-9b3a-f1bc666a8b80": {
+      "type": "ssh",
+      "name": "app-02",
+      "address": {
+        "dname": [
+          "app-02"
+        ]
+      }
+    }
+  },
+  "workflow_start": "start--396c3308-6561-433e-bcb2-088dd80db498",
+  "workflow": {
+    "start--396c3308-6561-433e-bcb2-088dd80db498": {
+      "type": "start",
+      "on_completion": "action--1b5502c0-7457-47a2-95d6-8ab46e5ca18b"
+    },
+    "action--1b5502c0-7457-47a2-95d6-8ab46e5ca18b": {
+      "type": "action",
+      "name": "Block the mining pool 198.51.100.7",
+      "description": "Drop outbound traffic to the mining pool.",
+      "agent": "linux--7ca27588-6a94-4761-9ce9-fc03e6a17afe",
+      "targets": [
+        "ssh--941ad0d2-8999-4a21-9b3a-f1bc666a8b80"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "ipables -I OUTPUT -d 198.51.100.7 -j DROP"
+        }
+      ],
+      "on_completion": "action--1c2247a7-5979-4085-9d38-4d94dc7eba18"
+    },
+    "action--1c2247a7-5979-4085-9d38-4d94dc7eba18": {
+      "type": "action",
+      "name": "Kill the miner",
+      "description": "Kill the miner process by its pid.",
+      "agent": "linux--7ca27588-6a94-4761-9ce9-fc03e6a17afe",
+      "targets": [
+        "ssh--941ad0d2-8999-4a21-9b3a-f1bc666a8b80"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "kill -9 4242"
+        },
+        {
+          "type": "bash",
+          "command": "please make sure the miner is really stopped"
+        }
+      ],
+      "on_completion": "action--52db16d3-4e62-4283-81ec-c55d4bcbb3f4"
+    },
+    "action--52db16d3-4e62-4283-81ec-c55d4bcbb3f4": {
+      "type": "action",
+      "name": "Record the incident",
+      "description": "Append a line to the incident log.",
+      "agent": "linux--7ca27588-6a94-4761-9ce9-fc03e6a17afe",
+      "targets": [
+        "ssh--941ad0d2-8999-4a21-9b3a-f1bc666a8b80"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "echo \"$(date -u +%FT%TZ) miner contained on app-02 >> /var/log/ai4soar_incidents.log"
+        }
+      ],
+      "on_completion": "end--e36a084c-c259-42d9-9a07-eff19083dd04"
+    },
+    "end--e36a084c-c259-42d9-9a07-eff19083dd04": {
+      "type": "end"
+    }
+  }
+}

@@ -29,13 +29,22 @@ const GROUPS = [
 ];
 
 const INTEGRATIONS = [
-  { group: 'SOAR Platform',     key: 'shuffle',   label: 'Shuffle',        urlKey: 'url'      },
-  { group: 'Database',          key: 'mongodb',   label: 'MongoDB',        urlKey: 'url'      },
-  { group: 'Messaging Brokers', key: 'kafka',     label: 'Kafka',          urlKey: 'broker'   },
-  { group: 'Messaging Brokers', key: 'nats',      label: 'NATS',           urlKey: 'url'      },
-  { group: 'LLM Providers',     key: 'anthropic', label: 'Anthropic',      urlKey: 'provider' },
-  { group: 'LLM Providers',     key: 'openai',    label: 'OpenAI',         urlKey: 'provider' },
-  { group: 'LLM Providers',     key: 'ollama',    label: 'Ollama (local)', urlKey: 'provider' },
+  { group: 'SOAR Platform', key: 'shuffle', label: 'Shuffle', urlKey: 'url',
+    desc: 'Open-source SOAR: AI4SOAR turns its CACAO playbooks into Shuffle workflows to review and run.' },
+  { group: 'SOAR Platform', key: 'soarca', label: 'SOARCA', urlKey: 'url',
+    desc: 'Open-source CACAO 2.0 orchestrator (TNO): runs AI4SOAR playbooks as they are, here as sandbox dry runs.' },
+  { group: 'Database', key: 'mongodb', label: 'MongoDB', urlKey: 'url',
+    desc: 'Stores the historical alerts and the benchmark alert set.' },
+  { group: 'Messaging Brokers', key: 'kafka', label: 'Kafka', urlKey: 'broker',
+    desc: 'Live alert stream: alerts published on a topic appear on the Alerts page.' },
+  { group: 'Messaging Brokers', key: 'nats', label: 'NATS', urlKey: 'url',
+    desc: 'Lightweight broker: an alternative live alert stream.' },
+  { group: 'LLM Providers', key: 'anthropic', label: 'Anthropic', urlKey: 'provider',
+    desc: 'Claude models: MITRE attribution (Path B), playbook generation (Path D), playbook review.' },
+  { group: 'LLM Providers', key: 'openai', label: 'OpenAI', urlKey: 'provider',
+    desc: 'GPT models: an alternative provider for the same LLM tasks.' },
+  { group: 'LLM Providers', key: 'ollama', label: 'Ollama (local)', urlKey: 'provider',
+    desc: 'Open-weight models on your own machine: no alert data leaves the site.' },
 ];
 
 /* One section per group: heading (+ "n of m connected" once loaded) and a row of cards */
@@ -59,14 +68,15 @@ function renderGroups(cardHtml, data) {
 }
 
 function skeletonCards() {
-  return renderGroups(({ label }) => `
+  return renderGroups(({ label, desc }) => `
     <div class="col-12 col-md-6 col-xl-4">
       <div class="card h-100">
         <div class="card-body">
-          <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="d-flex align-items-center gap-2 mb-1">
             <span class="status-dot status-loading"></span>
             <span class="fw-semibold">${label}</span>
           </div>
+          <div class="text-muted small mb-1" style="font-size:.78rem">${desc}</div>
           <small class="text-muted">Checking…</small>
         </div>
       </div>
@@ -74,7 +84,7 @@ function skeletonCards() {
 }
 
 function renderCards(data) {
-  return renderGroups(({ key, label, urlKey }) => {
+  return renderGroups(({ key, label, urlKey, desc }) => {
     const info  = data[key] || { status: 'unknown' };
     const { status, latency_ms, error } = info;
     const addr  = urlKey ? (info[urlKey] || '') : '';
@@ -84,7 +94,7 @@ function renderCards(data) {
     if (status === 'ok')
       detail = `<span class="text-success small"><i class="bi bi-check-circle me-1"></i>${latency_ms != null ? latency_ms + ' ms' : 'OK'}</span>`;
     else if (status === 'not_configured')
-      detail = `<span class="text-muted small" title="${error || ''}">${(error || 'Not configured').substring(0, 55)}</span>`;
+      detail = `<span class="text-danger small" title="${error || ''}">${(error || 'Not configured').substring(0, 55)}</span>`;
     else
       detail = `<span class="text-danger small" title="${error || ''}">${(error || 'unreachable').substring(0, 55)}</span>`;
 
@@ -99,7 +109,8 @@ function renderCards(data) {
                   <span class="fw-semibold">${label}</span>
                   ${info.active ? '<span class="badge rounded-pill text-bg-success" style="font-size:.65rem">active</span>' : ''}
                 </div>
-                ${addr ? `<div class="text-muted font-monospace small mb-1">${addr}</div>` : ''}
+                <div class="text-muted small mb-1" style="font-size:.78rem">${desc}</div>
+                ${addr ? `<div class="text-muted font-monospace small mb-1">${addr}${info.version ? ` · v${info.version}` : ''}</div>` : ''}
                 ${detail}
               </div>
             </div>

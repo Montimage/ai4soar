@@ -7,7 +7,17 @@
           <h6 class="modal-title mb-0" id="graph-title"></h6>
           <code class="text-muted" style="font-size:.68rem" id="graph-id"></code>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <span class="small text-muted d-none" id="graph-edit-note"></span>
+          <!-- Shown only when the page passed a save handler (see CacaoGraph.openModal) -->
+          <button type="button" class="btn btn-sm btn-outline-primary d-none" id="graph-edit-btn"
+                  onclick="CacaoGraph.startEdit()"><i class="bi bi-pencil me-1"></i>Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="graph-discard-btn"
+                  onclick="CacaoGraph.discardEdit()">Discard</button>
+          <button type="button" class="btn btn-sm btn-primary d-none" id="graph-save-btn"
+                  onclick="CacaoGraph.saveEdit()"><i class="bi bi-check-lg me-1"></i>Save</button>
+          <button type="button" class="btn-close ms-1" data-bs-dismiss="modal"></button>
+        </div>
       </div>
       <div class="modal-body">
         <div class="row g-3">

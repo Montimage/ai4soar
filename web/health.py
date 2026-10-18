@@ -42,6 +42,22 @@ def _ping_shuffle():
         return {"status": "error", "error": str(e), "url": url}
 
 
+def _ping_soarca():
+    url = config.soarca.url
+    if not url:
+        return {"status": "not_configured", "error": "SOARCA_URL is not set (docker-compose.soarca.yml)"}
+    t0 = time.monotonic()
+    try:
+        r = requests.get(f"{url}/status/", timeout=3)
+        latency = int((time.monotonic() - t0) * 1000)
+        if r.status_code == 200:
+            return {"status": "ok", "latency_ms": latency, "url": url,
+                    "version": r.json().get("version")}
+        return {"status": "error", "error": f"HTTP {r.status_code}", "url": url}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "url": url}
+
+
 def _ping_mongodb():
     # host/port/database only: the config holds no credentials
     url = f"mongodb://{config.mongodb.host}:{config.mongodb.port}/{config.mongodb.database}"
@@ -182,6 +198,7 @@ def integration_health():
     active = _active_llm_provider()
     checks = {
         "shuffle":   _ping_shuffle,
+        "soarca":    _ping_soarca,
         "mongodb":   _ping_mongodb,
         "kafka":     _ping_kafka,
         "nats":      _ping_nats,

@@ -12,6 +12,11 @@
            style="width:340px" id="pb-search" placeholder="Filter by name, technique, tactic…"
            oninput="filterCards()">
     <span class="text-muted small" id="pb-count"></span>
+    <span class="text-muted small" id="shuffle-summary"></span>
+    <button class="btn btn-primary btn-sm" id="sync-btn" onclick="syncToShuffle()"
+            title="Create the library's missing Shuffle workflows and update the changed ones (credentials entered in Shuffle are kept)">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync to Shuffle
+    </button>
   </div>
 </div>
 
@@ -44,6 +49,7 @@ async function loadLibrary() {
     document.getElementById('pb-count').textContent =
       `${allPlaybooks.length} template${allPlaybooks.length !== 1 ? 's' : ''}`;
     renderCards(allPlaybooks);
+    loadShuffleStatus();
   } catch (e) {
     document.getElementById('pb-loading').innerHTML =
       `<div class="alert alert-danger">Failed to load library: ${escHtml(e.message)}</div>`;
@@ -141,13 +147,16 @@ function pbCard(pb) {
           <div class="fw-semibold">${escHtml(pb.name)}</div>
           <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
         </div>
-        <div class="d-flex gap-1 align-items-center flex-shrink-0 ms-2">
-          <span class="badge bg-light text-secondary border" style="font-size:.62rem"
-                title="Template version — the 'version:' field of this playbook's YAML file. Independent of the CACAO spec version.">
-            template v${pb.version}</span>
-          <span class="badge bg-light text-secondary border" style="font-size:.62rem"
-                title="CACAO specification this workflow conforms to (cacao.spec_version)">
-            ${escHtml(specVersion(pb))}</span>
+        <div class="d-flex flex-column align-items-end flex-shrink-0 ms-2 gap-1">
+          <div class="d-flex gap-1 align-items-center">
+            <span class="badge bg-light text-secondary border" style="font-size:.62rem"
+                  title="Template version — the 'version:' field of this playbook's YAML file. Independent of the CACAO spec version.">
+              template v${pb.version}</span>
+            <span class="badge bg-light text-secondary border" style="font-size:.62rem"
+                  title="CACAO specification this workflow conforms to (cacao.spec_version)">
+              ${escHtml(specVersion(pb))}</span>
+          </div>
+          <span class="small" style="font-size:.75rem" id="shuffle-state-${escAttr(pb.id)}"></span>
         </div>
       </div>
 
@@ -211,6 +220,7 @@ function pbCard(pb) {
                 onclick="copyCacao(this)">
           <i class="bi bi-clipboard me-1"></i>Copy CACAO
         </button>
+        <span class="ms-auto d-flex align-items-center gap-2 small" id="shuffle-${escAttr(pb.id)}"></span>
       </div>
     </div>
   </div>`;
@@ -226,10 +236,86 @@ function specVersion(pb) {
            : 'CACAO 2.0';
 }
 
+/* ── Shuffle library: one reusable workflow per template ── */
+let shuffleStatus = {};
+
+const SHUFFLE_STATE = {
+  current:  ['text-success', 'bi-check-circle', 'In Shuffle'],
+  outdated: ['text-warning', 'bi-exclamation-circle', 'Update available'],
+  missing:  ['text-muted',   'bi-dash-circle', 'Not in Shuffle'],
+};
+
+function renderShuffleStatus() {
+  const counts = { current: 0, outdated: 0, missing: 0 };
+  for (const pb of allPlaybooks) {
+    const st = shuffleStatus[pb.id];
+    const slot = document.getElementById(`shuffle-${pb.id}`);
+    const state = document.getElementById(`shuffle-state-${pb.id}`);
+    if (!st || !slot) continue;
+    counts[st.state]++;
+    const [cls, icon, text] = SHUFFLE_STATE[st.state];
+    if (state) state.innerHTML = `<span class="${cls}" title="${escHtml(st.name)}"><i class="bi ${icon} me-1"></i>${text}</span>`;
+    slot.innerHTML = st.url ? `<a href="${escHtml(st.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                     <i class="bi bi-box-arrow-up-right me-1"></i>Open in Shuffle</a>` : '';
+  }
+  const todo = counts.outdated + counts.missing;
+  document.getElementById('shuffle-summary').textContent =
+    `· ${counts.current} in Shuffle` + (todo ? ` · ${todo} to sync` : ' · all up to date');
+}
+
+async function loadShuffleStatus() {
+  try {
+    const data = await apiFetch('/playbooks/shuffle_library');
+    shuffleStatus = Object.fromEntries((data.templates || []).map(t => [t.template_id, t]));
+    renderShuffleStatus();
+  } catch (e) {
+    document.getElementById('shuffle-summary').textContent = '· Shuffle status unavailable';
+  }
+}
+
+async function syncToShuffle() {
+  const btn = document.getElementById('sync-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Syncing…';
+  try {
+    const data = await apiFetch('/playbooks/shuffle_library/sync', { method: 'POST', body: '{}' });
+    const r = data.results || [];
+    const n = a => r.filter(x => x.action === a).length;
+    const failed = r.filter(x => !x.ok).length;
+    showToast(`Shuffle: ${n('created')} created, ${n('updated')} updated, ${n('unchanged')} unchanged`
+              + (failed ? `, ${failed} failed` : ''), failed ? 'error' : 'success');
+    await loadShuffleStatus();
+  } catch (e) {
+    showToast('Sync failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Sync to Shuffle';
+  }
+}
+
 /* ── Workflow graph modal (shared, see cacao_graph.js) ── */
+/* Edit saves the template to its YAML file (new version), then updates its library
+   workflow in Shuffle; alerts recommended from now on use the edited template. */
 function openGraph(pbId) {
   const pb = allPlaybooks.find(p => p.id === pbId);
-  if (pb) CacaoGraph.openModal(pb);
+  if (!pb) return;
+  CacaoGraph.openModal(pb, {
+    editNote: 'Editing the library template',
+    onSave: async cacao => {
+      const saved = await apiFetch(`/playbook_library/${encodeURIComponent(pb.id)}`,
+                                   { method: 'PUT', body: JSON.stringify({ cacao }) });
+      pb.version = saved.version;
+      renderCards(allPlaybooks);
+      let shuffle = '';
+      try {
+        const r = ((await apiFetch('/playbooks/shuffle_library/sync',
+          { method: 'POST', body: JSON.stringify({ only: [pb.id] }) })).results || [])[0];
+        shuffle = r && r.ok ? `, Shuffle workflow ${r.action}` : ', Shuffle not updated: use Sync to Shuffle';
+      } catch (_) { shuffle = ', Shuffle not updated: use Sync to Shuffle'; }
+      loadShuffleStatus();
+      return `Saved as v${saved.version} (${saved.file})${shuffle}`;
+    },
+  });
 }
 
 function copyCacao(btn) {

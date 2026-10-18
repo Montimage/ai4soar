@@ -1,0 +1,93 @@
+{
+  "type": "playbook",
+  "spec_version": "cacao-2.0",
+  "id": "playbook--b06dc607-0efe-4eb2-a6e8-262ad68452fa",
+  "name": "Respond to malware /tmp/.x/update on srv-03 (wrong order)",
+  "description": "Steps that undo each other or do not do what their name says.",
+  "playbook_types": [
+    "remediation"
+  ],
+  "created_by": "identity--c8bde83a-ff38-57ad-bec8-7f3775beb1e4",
+  "created": "2026-10-18T09:00:00Z",
+  "modified": "2026-10-18T09:00:00Z",
+  "agent_definitions": {
+    "linux--7e9e8256-5b3e-4ce2-90fd-93b03c511f18": {
+      "type": "linux",
+      "name": "AI4SOAR / Shuffle",
+      "address": {
+        "ipv4": [
+          "127.0.0.1"
+        ]
+      }
+    }
+  },
+  "target_definitions": {
+    "ssh--533daa07-925c-4238-ba9f-26f0392eb950": {
+      "type": "ssh",
+      "name": "srv-03",
+      "address": {
+        "dname": [
+          "srv-03"
+        ]
+      }
+    }
+  },
+  "workflow_start": "start--cc0a8e6e-e710-4c84-bd7b-1b7fc1a0faef",
+  "workflow": {
+    "start--cc0a8e6e-e710-4c84-bd7b-1b7fc1a0faef": {
+      "type": "start",
+      "on_completion": "action--3813d1a4-42f4-4b42-b068-1b3e251e666a"
+    },
+    "action--3813d1a4-42f4-4b42-b068-1b3e251e666a": {
+      "type": "action",
+      "name": "Delete the malware file",
+      "description": "Remove the malicious binary.",
+      "agent": "linux--7e9e8256-5b3e-4ce2-90fd-93b03c511f18",
+      "targets": [
+        "ssh--533daa07-925c-4238-ba9f-26f0392eb950"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "rm -f /tmp/.x/update"
+        }
+      ],
+      "on_completion": "action--ebe81411-9888-4851-84a0-d48586eee371"
+    },
+    "action--ebe81411-9888-4851-84a0-d48586eee371": {
+      "type": "action",
+      "name": "Hash the malware for threat intel",
+      "description": "Compute the SHA-256 of the binary for the IOC feed.",
+      "agent": "linux--7e9e8256-5b3e-4ce2-90fd-93b03c511f18",
+      "targets": [
+        "ssh--533daa07-925c-4238-ba9f-26f0392eb950"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "sha256sum /tmp/.x/update"
+        }
+      ],
+      "on_completion": "action--22719078-6c89-4e0c-b100-21a3670fc85e"
+    },
+    "action--22719078-6c89-4e0c-b100-21a3670fc85e": {
+      "type": "action",
+      "name": "Lock the account bob",
+      "description": "Prevent bob from logging in again.",
+      "agent": "linux--7e9e8256-5b3e-4ce2-90fd-93b03c511f18",
+      "targets": [
+        "ssh--533daa07-925c-4238-ba9f-26f0392eb950"
+      ],
+      "commands": [
+        {
+          "type": "bash",
+          "command": "passwd -S bob"
+        }
+      ],
+      "on_completion": "end--1042075b-8a95-4ad2-bc88-e4c73987e254"
+    },
+    "end--1042075b-8a95-4ad2-bc88-e4c73987e254": {
+      "type": "end"
+    }
+  }
+}

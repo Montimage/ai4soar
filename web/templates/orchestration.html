@@ -8,9 +8,6 @@
     <small class="text-muted">3-stage recommendation engine (STIX lookup, LLM technique
       attribution + ML similarity, then CACAO 2.0 generation as a safety net)</small>
   </div>
-  <a href="/ui/alerts" class="btn btn-sm btn-outline-primary">
-    <i class="bi bi-arrow-left me-1"></i>Back to Alerts
-  </a>
 </div>
 
 <!-- Idle: no alert loaded -->
@@ -29,7 +26,7 @@
     <!-- Alert detail card -->
     <div class="col-12 col-lg-5">
       <div class="card h-100">
-        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center orch-card-header">
           <span class="fw-semibold small">Selected Alert</span>
           <div class="d-flex gap-2">
             <span class="badge bg-secondary small" id="alert-source-badge"></span>
@@ -65,7 +62,7 @@
     <!-- Recommendation card -->
     <div class="col-12 col-lg-7">
       <div class="card h-100">
-        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center orch-card-header">
           <span class="fw-semibold small">Recommendation Engine</span>
           <div class="d-flex align-items-center gap-2 ms-auto">
           <!-- "Result from HH:MM · run again" when a saved result is shown -->
@@ -98,22 +95,35 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">
-          Execute on Shuffle
+          Execute
         </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="text-muted small mb-1">Recommended playbook:</p>
-        <p class="fw-semibold mb-3" id="shuffle-context"></p>
-        <div id="shuffle-body">
-          <div class="text-center py-3">
-            <span class="spinner-border spinner-border-sm text-primary me-2"></span>
-            <small class="text-muted">Loading Shuffle config…</small>
+        <p class="fw-semibold mb-2" id="shuffle-context"></p>
+        <!-- One playbook, two platforms: a real run in Shuffle, a dry run on SOARCA -->
+        <ul class="nav nav-tabs exec-tabs mb-3" role="tablist">
+          <li class="nav-item d-none" id="exec-tab-soarca-li"><button class="nav-link" id="exec-tab-soarca"
+              data-bs-toggle="tab" data-bs-target="#exec-soarca" type="button">SOARCA (dry run)
+              <span class="ms-1" id="exec-tab-soarca-state"></span></button></li>
+          <li class="nav-item"><button class="nav-link active" id="exec-tab-shuffle" data-bs-toggle="tab"
+              data-bs-target="#exec-shuffle" type="button">Shuffle (real run)
+              <span class="ms-1" id="exec-tab-shuffle-state"></span></button></li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="exec-shuffle">
+            <div id="shuffle-body">
+              <div class="text-center py-3">
+                <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+                <small class="text-muted">Loading Shuffle config…</small>
+              </div>
+            </div>
           </div>
+          <div class="tab-pane fade" id="exec-soarca"><div id="soarca-section"></div></div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-outline-primary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -127,6 +137,7 @@
 /* ── Load alert from localStorage ── */
 let selectedAlert  = null;
 let recPlaybooks   = [];   // last recommendation, for the workflow modal
+let lastOrchResult = null;
 const LAST_RESULT_KEY = 'ai4soar_last_orch';   // see saveLastResult()
 let selectedSource = null;
 
@@ -144,6 +155,26 @@ let selectedSource = null;
 
 /* The last orchestration result is kept with the alert it belongs to, so coming back
    to this page shows it again instead of re-running the (paid) LLM call. */
+/* A saved result keeps the playbooks as they were built then: if a template changed since
+   (edited on the Playbooks page, or updated on the server), say so instead of executing
+   the old version. */
+async function flagOutdated(result) {
+  const lib = await apiFetch('/playbook_library').catch(() => null);
+  if (!lib) return;
+  const current = Object.fromEntries((lib.playbooks || []).map(t => [t.id, t.hash]));
+  const stale = (result.playbooks || []).filter(pb => pb.id in current && pb.template_hash !== current[pb.id]);
+  if (!stale.length) return;
+  const note = document.getElementById('orch-saved-note');
+  note.innerHTML += ` · <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>`
+    + `${stale.length} template${stale.length > 1 ? 's' : ''} changed: run again</span>`;
+  for (const pb of stale) {
+    const i = recPlaybooks.indexOf(pb);
+    const slot = document.getElementById(`pb-verify-${i}`);
+    if (slot) slot.insertAdjacentHTML('beforebegin', `<div class="small text-warning mb-1">
+      <i class="bi bi-exclamation-triangle me-1"></i>Built from an older version of this template: Run Orchestration again before executing</div>`);
+  }
+}
+
 function saveLastResult(result) {
   try {
     localStorage.setItem(LAST_RESULT_KEY, JSON.stringify({
@@ -158,12 +189,11 @@ function restoreLastResult() {
   if (!saved || saved.alert !== JSON.stringify(selectedAlert)) return;
   hide('orch-idle');
   renderOrchResult(saved.result);
-  const at = new Date(saved.at);
-  const when = at.toDateString() === new Date().toDateString()
-    ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : at.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+  const when = new Date(saved.at).toLocaleString([], {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const note = document.getElementById('orch-saved-note');
   note.innerHTML = `<i class="bi bi-clock-history me-1"></i>Result from ${escHtml(when)}`;
+  flagOutdated(saved.result);
   note.title = 'Saved result for this alert. Run Orchestration to refresh it.';
   note.classList.remove('d-none');
 }
@@ -200,11 +230,11 @@ function renderAlertPanel() {
     <dt class="col-sm-4 text-muted">Timestamp</dt>
     <dd class="col-sm-8 font-monospace small">${escHtml(String(f.timestamp))}</dd>
     <dt class="col-sm-4 text-muted">Severity</dt>
-    <dd class="col-sm-8">${severityBadge(f.severityLabel)} <code class="small">${f.severity}</code></dd>
+    <dd class="col-sm-8">${severityBadge(f.severityLabel)}</dd>
     <dt class="col-sm-4 text-muted">Description</dt>
     <dd class="col-sm-8">${escHtml(f.description)}</dd>
     <dt class="col-sm-4 text-muted">Technique</dt>
-    <dd class="col-sm-8 font-monospace small" style="color:#0969da">${escHtml(f.technique)}</dd>
+    <dd class="col-sm-8">${techniqueLabel(f)}</dd>
     ${benchMeta()}
     <dt class="col-sm-4 text-muted">Source IP</dt>
     <dd class="col-sm-8 font-monospace small">${f.src_ip}</dd>
@@ -213,6 +243,17 @@ function renderAlertPanel() {
 
   const rawJson = JSON.stringify(selectedAlert, null, 2);
   document.getElementById('raw-json').textContent = rawJson;
+}
+
+/* A tag per technique the alert carries ("T1110"; ids and names pair up for the tooltip) */
+function techniqueLabel(f) {
+  const ids = f.technique_ids || [];
+  const names = f.technique && f.technique !== '—' ? f.technique.split(', ') : [];
+  if (!ids.length && !names.length) return '<span class="text-muted">—</span>';
+  // The technique id as a tag, like the Playbooks page; its name in the tooltip
+  return (ids.length ? ids : names).map((x, i) => `<span class="badge font-monospace me-1 mb-1 text-dark"
+      title="${escHtml(ids.length && names[i] ? `${x} — ${names[i]}` : x)}"
+      style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.68rem;cursor:default">${escHtml(x)}</span>`).join('');
 }
 
 function copyRawJson(btn) {
@@ -255,8 +296,9 @@ async function runOrch() {
 }
 
 function renderOrchResult(r) {
+  lastOrchResult = r;
   const pathBadges = (r.paths_used || [])
-    .map(p => `<span class="path-badge me-1">Path ${p}</span>`).join('');
+    .map(p => `<span class="path-badge">Path ${p}</span>`).join('');
 
   const techBadges = (r.technique_ids || [])
     .map((id, i) => {
@@ -296,34 +338,37 @@ function renderOrchResult(r) {
     const top1     = ranked[0] || (r.technique_ids || [])[0] || '';
     const all      = ranked.length ? ranked : (r.technique_ids || []);
 
-    let cls, icon, text;
+    // Benchmark alerts only (they carry the expected answer): a short pill in the
+    // status row; the full sentence is its tooltip
+    let tier, short, text;
     if (gtSet.has(top1)) {
-      cls = 'rank-flag-hit'; icon = 'check-circle-fill';
+      tier = 'HIGH'; short = `✓ ${top1} at rank 1`;
       text = `Exact match at rank 1 — expected ${gt.join(', ')}`;
     } else if (gtParent.has(parent(top1))) {
-      cls = 'rank-flag-hit'; icon = 'check-circle';
+      tier = 'HIGH'; short = `✓ parent of ${gt.join(', ')} at rank 1`;
       text = `Parent match at rank 1 — predicted ${top1}, expected ${gt.join(', ')}`;
     } else if (all.some(t => gtSet.has(t) || gtParent.has(parent(t)))) {
       const at = all.findIndex(t => gtSet.has(t) || gtParent.has(parent(t))) + 1;
-      cls = 'rank-flag-gap'; icon = 'exclamation-triangle';
+      tier = 'MEDIUM'; short = `${gt.join(', ')} at rank ${at}`;
       text = `Expected ${gt.join(', ')} found at rank ${at}, not rank 1`;
     } else {
-      cls = 'rank-flag-miss'; icon = 'x-circle';
+      tier = 'LOW'; short = `✗ expected ${gt.join(', ')}`;
       text = `Miss — expected ${gt.join(', ')}, none of the ranked techniques match`;
     }
-    return `
-      <div class="mb-3">
-        <span class="rank-flag ${cls}" style="font-size:.72rem;padding:4px 10px">
-          <i class="bi bi-${icon} me-1"></i>${escHtml(text)}
-        </span>
-      </div>`;
+    return `<span class="tier-badge tier-${tier}" title="Benchmark check: ${escHtml(text)}">${escHtml(short)}</span>`;
   })();
+
+  // Defined before rankedSection, which shows the tactic next to its title
+  const tacticBadges = (r.tactics || [])
+    .map(t => `<span class="badge font-monospace me-1 mb-1 text-dark"
+               style="background:#e2e8f0;border:1px solid #94a3b8;font-size:.7rem">${escHtml(t)}</span>`).join('');
 
   const rankedSection = ranked.length ? `
     <div class="mb-3">
-      <div class="small text-muted mb-2">
+      <div class="small text-muted mb-2 d-flex flex-wrap align-items-center gap-1">
         LLM Technique Attribution
-        <span class="badge bg-secondary ms-1">top ${ranked.length}</span>
+        <span class="badge bg-secondary">top ${ranked.length}</span>
+        ${tacticBadges ? `<span class="ms-2">${tacticBadges}</span>` : ''}
       </div>
       <div class="d-flex flex-column gap-1">
         ${ranked.map((id, i) => {
@@ -358,16 +403,13 @@ function renderOrchResult(r) {
       </div>
     </div>` : '';
 
-  const tacticBadges = (r.tactics || [])
-    .map(t => `<span class="badge bg-secondary me-1 mb-1">${t}</span>`).join('');
-
   let actionBadges = '';
   if (r.auto_executable)
-    actionBadges += '<span class="badge bg-success me-1"><i class="bi bi-check-circle me-1"></i>Auto-executable</span>';
+    actionBadges += '<span class="tier-badge tier-HIGH">Auto-executable</span>';
   if (r.requires_human_approval)
-    actionBadges += '<span class="badge bg-warning text-dark me-1"><i class="bi bi-person-check me-1"></i>Needs Approval</span>';
+    actionBadges += '<span class="tier-badge tier-MEDIUM">Needs Approval</span>';
   if (r.requires_human_review)
-    actionBadges += '<span class="badge bg-danger me-1"><i class="bi bi-eye me-1"></i>Needs Review</span>';
+    actionBadges += '<span class="tier-badge tier-LOW">Needs Review</span>';
 
   const llmSection = r.llm_reasoning ? `
     <div class="mt-3 mb-2">
@@ -377,22 +419,13 @@ function renderOrchResult(r) {
       </div>
     </div>` : '';
 
-  const cacaoSection = r.cacao_playbook ? `
-    <div class="mt-2">
-      <a class="btn btn-link btn-sm text-muted p-0 text-decoration-none"
-         data-bs-toggle="collapse" data-bs-target="#cacao-collapse">
-        Generated CACAO 2.0 Playbook
-      </a>
-      <div class="collapse mt-2" id="cacao-collapse">
-        <pre class="json-viewer">${escHtml(JSON.stringify(r.cacao_playbook, null, 2))}</pre>
-      </div>
-    </div>` : '';
-
   const playbooks = r.playbooks || [];
   recPlaybooks = playbooks;
   const pbCards = playbooks.map((pb, i) => {
     const slug = `pb-${i}-${pb.id}`;
-    const filled  = pb.parameters_filled  || {};
+    // Deployment settings (.env) are not alert values: shown apart from the chips
+    const settings = pb.parameters_settings || [];
+    const filled  = Object.fromEntries(Object.entries(pb.parameters_filled || {}).filter(([k]) => !settings.includes(k)));
     const missing = pb.parameters_missing || [];
     const filledHtml = Object.entries(filled).map(([k, v]) => `
       <span class="d-inline-flex align-items-center gap-1 me-1 mb-1 px-2 py-1"
@@ -407,12 +440,16 @@ function renderOrchResult(r) {
         <span class="font-monospace" style="color:#cf222e">?</span>
       </span>`).join('');
     const rejected = pb.parameters_rejected || [];
-    const paramsSection = (filledHtml || missingHtml || rejected.length) ? `
+    const settingsHtml = settings.length ? `<div class="text-muted mt-1" style="font-size:.68rem"
+        title="Deployment settings from .env, the same for every alert">
+        <i class="bi bi-gear me-1"></i>From .env: ${settings.map(k => `${escHtml(k)} <span class="font-monospace">${escHtml(String((pb.parameters_filled || {})[k]))}</span>`).join(' · ')}</div>` : '';
+    const paramsSection = (filledHtml || missingHtml || rejected.length || settingsHtml) ? `
       <div class="mt-2">
         <div class="text-muted mb-1" style="font-size:.65rem;text-transform:uppercase;letter-spacing:.5px">
-          Parameters
+          From the alert
         </div>
         <div class="d-flex flex-wrap">${filledHtml}${missingHtml}</div>
+        ${settingsHtml}
         ${missing.length ? `<div class="text-warning mt-1" style="font-size:.68rem">
           <i class="bi bi-exclamation-triangle me-1"></i>${missing.length} parameter(s) not found in alert IoCs
         </div>` : ''}
@@ -435,7 +472,8 @@ function renderOrchResult(r) {
     return `
     <div class="playbook-card mb-2">
       <div class="overflow-hidden">
-        <div class="fw-semibold small">${escHtml(pb.name || pb.id)}</div>
+        <div class="fw-semibold small">${escHtml(pb.name || pb.id)}${pb.edited
+          ? ' <span class="path-badge ms-1" title="Changed in the Workflow view: Verify, Copy CACAO and Execute use the edited playbook">edited</span>' : ''}</div>
         ${pb.description ? `<div class="text-muted" style="font-size:.75rem">${escHtml(pb.description)}</div>` : ''}
         <code class="text-muted" style="font-size:.68rem">${pb.id}</code>
       </div>
@@ -449,8 +487,8 @@ function renderOrchResult(r) {
       <!-- Same actions, names and styles as the Playbooks page cards -->
       <div class="d-flex flex-wrap gap-2 mt-3 pt-2 border-top">
         ${cacaoObj ? `<button class="btn btn-sm btn-outline-primary"
-                onclick="CacaoGraph.openModal(recPlaybooks[${i}])"
-                title="Workflow graph with the values filled from this alert">
+                onclick="openWorkflow(${i})"
+                title="Workflow graph with the values filled from this alert; Edit changes it for this alert">
           <i class="bi bi-diagram-3 me-1"></i>Workflow
         </button>
         <button class="btn btn-sm btn-outline-primary" onclick="openInVerify(${i})"
@@ -461,8 +499,7 @@ function renderOrchResult(r) {
                 title="Copy this filled-in CACAO 2.0 playbook as JSON">
           <i class="bi bi-clipboard me-1"></i>Copy CACAO
         </button>` : ''}
-        <button class="btn btn-sm btn-primary ms-auto"
-                onclick="openShuffleModal('${pb.id}', '${escAttr(pb.name || pb.id)}')">
+        <button class="btn btn-sm btn-primary ms-auto" onclick="openShuffleModal(${i})">
           <i class="bi bi-play-fill me-1"></i>Execute
         </button>
       </div>
@@ -474,14 +511,14 @@ function renderOrchResult(r) {
       ${tierBadge(r.confidence_tier, r.confidence)}
       ${pathBadges}
       ${actionBadges}
+      ${verdictSection}
     </div>
-    ${verdictSection}
     ${ranked.length
         ? rankedSection
-        : (techBadges ? `<div class="mb-2">${techBadges}</div>` : '')}
-    ${tacticBadges ? `<div class="mb-3">${tacticBadges}</div>` : ''}
+        : (techBadges || tacticBadges
+            ? `<div class="mb-3 d-flex flex-wrap align-items-center">${techBadges}${tacticBadges}</div>`
+            : '')}
     ${llmSection}
-    ${cacaoSection}
     <div class="mt-3">
       <div class="small text-muted mb-2">
         Recommended Playbooks
@@ -504,7 +541,8 @@ async function verifyRecommended(playbooks) {
     if (!pb.cacao) { slot.innerHTML = ''; return; }
     try {
       const optional = (pb.parameters_optional_unfilled || []).join(',');
-      const r = await apiFetch(`/verify_playbook?structural_only=true&optional_params=${encodeURIComponent(optional)}`,
+      const r = await apiFetch(`/verify_playbook?structural_only=true&optional_params=${encodeURIComponent(optional)}`
+                               + `&secret_params=${encodeURIComponent((pb.parameters_secret || []).join(','))}`,
                                { method: 'POST', body: JSON.stringify(pb.cacao) });
       slot.innerHTML = verifyBadgeHtml(r, i, pb);
     } catch (e) {
@@ -520,7 +558,6 @@ function verifyBadgeHtml(r, i, pb) {
   const issues = all.filter(x => x.severity !== 'info');
   const errors = issues.filter(x => x.severity === 'error').length;
   const warns  = issues.length - errors;
-  const score  = r.overall_score ?? 100;
   const cls    = !r.passed ? 'danger' : issues.length ? 'warning' : 'success';
   const icon   = !r.passed ? 'x-octagon' : issues.length ? 'exclamation-triangle' : 'patch-check';
   const label  = !r.passed ? 'Verification failed'
@@ -528,11 +565,11 @@ function verifyBadgeHtml(r, i, pb) {
   const counts = issues.length
     ? ` · ${errors ? `${errors} error${errors > 1 ? 's' : ''}` : ''}${errors && warns ? ', ' : ''}${warns ? `${warns} warning${warns > 1 ? 's' : ''}` : ''}`
     : '';
-  const c = r.checks || {};
-  const checksTitle = `Spec ${c.spec ?? '–'} · official schema ${c.schema ?? '–'} · structure ${c.structural ?? '–'} · safety ${c.safety ?? '–'} issue(s); LLM check not run`;
+  const sm = r.summary || {};
+  const checksTitle = `${sm.ok ?? '–'} of ${sm.run ?? '–'} criteria passed (CACAO, structure, commands); the LLM review runs on the Verify page`;
   // Step ids are UUIDs in the parameterized playbook: show the step name instead
   const stepName = id => ((pb.cacao.workflow || {})[id] || {}).name || id;
-  const CAT = { spec: 'Spec', schema: 'Schema', safety: 'Safety', structural: 'Structure', llm: 'LLM' };
+  const CAT = { spec: 'Spec', schema: 'Schema', safety: 'Safety', syntax: 'Syntax', structural: 'Structure', llm: 'LLM' };
   const list = issues.map(x => `
     <div class="d-flex align-items-start gap-2 mb-1" style="font-size:.72rem">
       <span class="badge bg-${x.severity === 'error' ? 'danger' : 'warning'} flex-shrink-0">${escHtml(CAT[x.category] || x.category || '')}</span>
@@ -543,7 +580,7 @@ function verifyBadgeHtml(r, i, pb) {
     <button class="btn btn-sm btn-outline-${cls} py-0 px-2" style="font-size:.72rem"
             ${issues.length ? `data-bs-toggle="collapse" data-bs-target="#pb-verify-list-${i}"` : ''}
             title="${escHtml(checksTitle)}">
-      <i class="bi bi-${icon} me-1"></i>${label} · ${score}/100${counts}
+      <i class="bi bi-${icon} me-1"></i>${label}${counts}
       ${issues.length ? '<i class="bi bi-chevron-down ms-1"></i>' : ''}
     </button>
     ${infos.length ? `<a href="#" class="ms-2 text-muted text-decoration-none" style="font-size:.72rem"
@@ -553,6 +590,24 @@ function verifyBadgeHtml(r, i, pb) {
     ${issues.length ? `<div class="collapse mt-2" id="pb-verify-list-${i}">${list}</div>` : ''}
     ${infos.length ? `<div class="collapse mt-2 text-muted" id="pb-verify-info-${i}" style="font-size:.72rem">
        ${infos.map(x => `<div><i class="bi bi-dot"></i>${escHtml(x.description)}</div>`).join('')}</div>` : ''}`;
+}
+
+/* Workflow view; Edit changes the playbook for this alert only (the library template is
+   edited on the Playbooks page). Verify, Copy CACAO and Execute then use the edited one. */
+function openWorkflow(i) {
+  CacaoGraph.openModal(recPlaybooks[i], {
+    editNote: 'Editing for this alert only',
+    onSave: async cacao => {
+      const pb = recPlaybooks[i];
+      if (lastOrchResult.cacao_playbook && lastOrchResult.cacao_playbook.id === pb.cacao.id)
+        lastOrchResult.cacao_playbook = cacao;      // Path D keeps a top-level copy
+      pb.cacao = cacao;
+      pb.edited = true;
+      saveLastResult(lastOrchResult);
+      renderOrchResult(lastOrchResult);              // re-verifies it: the badge shows any issue
+      return 'Saved for this alert: Execute uses the edited playbook';
+    },
+  });
 }
 
 function copyCacao(i, btn) {
@@ -569,64 +624,281 @@ function openInVerify(i) {
   if (!pb || !pb.cacao) return;
   try {
     localStorage.setItem('ai4soar_verify_playbook', JSON.stringify({
-      name: pb.name || pb.id, cacao: pb.cacao, optional: pb.parameters_optional_unfilled || [] }));
+      name: pb.name || pb.id, cacao: pb.cacao, optional: pb.parameters_optional_unfilled || [],
+      secret: pb.parameters_secret || [] }));
   } catch (_) {}
   window.location.href = '/ui/verify';
 }
 
 /* ── Shuffle modal ── */
-async function openShuffleModal(recId, recName) {
-  document.getElementById('shuffle-context').textContent = recName || recId;
-  document.getElementById('shuffle-body').innerHTML = `
-    <div class="text-center py-3">
-      <span class="spinner-border spinner-border-sm text-primary me-2"></span>
-      <small class="text-muted">Loading Shuffle config…</small>
-    </div>`;
+/* Execute: deploy the filled-in playbook to Shuffle as a workflow (or reuse the identical
+   one), then open or run THAT workflow and show its results here. */
+async function openShuffleModal(i) {
+  const pb = recPlaybooks[i] || {};
+  document.getElementById('shuffle-context').textContent = pb.name || pb.id || '';
+  const body = document.getElementById('shuffle-body');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('shuffleModal')).show();
+  bootstrap.Tab.getOrCreateInstance(document.getElementById('exec-tab-shuffle')).show();
+  setTabState('shuffle', ''); setTabState('soarca', '');
+  openSoarcaSection(pb);
 
-  const modal = new bootstrap.Modal(document.getElementById('shuffleModal'));
-  modal.show();
-
+  if (!pb.cacao) {   // nothing to convert: fall back to the manual flow
+    const cfg = await apiFetch('/shuffle/config').catch(() => ({}));
+    body.innerHTML = manualResultsHtml(cfg.ui_url || '', true);
+    return;
+  }
+  body.innerHTML = `<div class="text-center py-3">
+    <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+    <small class="text-muted">Creating the workflow in Shuffle…</small></div>`;
   try {
-    const cfg = await apiFetch('/shuffle/config');
-    renderShuffleOpen(cfg, recName || recId);
+    const d = await apiFetch('/playbooks/shuffle_workflow', {
+      method: 'POST',
+      body: JSON.stringify({ cacao: pb.cacao, generated: pb.source === 'cacao_generated' }),
+    });
+    renderShuffleWorkflow(d);
   } catch (e) {
-    document.getElementById('shuffle-body').innerHTML =
-      `<div class="text-danger small">Failed to load Shuffle config: ${escHtml(e.message)}</div>`;
+    body.innerHTML = `<div class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>
+      Could not create the Shuffle workflow: ${escHtml(e.message)}</div>`;
   }
 }
 
-function renderShuffleOpen(cfg, recName) {
-  const url = cfg.default_workflow_url || cfg.ui_url + '/workflows';
-  const wid = cfg.default_workflow_id || '';
+/* SOARCA runs CACAO as it is: the dry run keeps the playbook's flow and step names, each
+   step printing on a sandbox what it would do (core/orchestration_engine/soarca.py). */
+let soarcaPlaybook = null;
+let shufflePlaybook = null;
+let shuffleNodes = 0;         // node count of the workflow in the dialog (for "n of m done")   // the CACAO of the playbook in the Execute dialog (step names)
+async function openSoarcaSection(pb) {
+  const el = document.getElementById('soarca-section');
+  const li = document.getElementById('exec-tab-soarca-li');
+  soarcaPlaybook = pb.cacao || null;
+  shufflePlaybook = pb.cacao || null;
+  li.classList.add('d-none');
+  if (!soarcaPlaybook) return;
+  const st = await apiFetch('/soarca/status').catch(() => ({}));
+  if (!st.configured) return;
+  li.classList.remove('d-none');
+  bootstrap.Tab.getOrCreateInstance(document.getElementById('exec-tab-soarca')).show();   // first tab
+  el.innerHTML = `
+    <div class="d-flex align-items-center gap-2">
+      <span class="path-badge">SOARCA ${escHtml(st.version || '')}</span>
+      <span class="small text-muted">runs this CACAO playbook as it is; each step prints on a sandbox
+        what it would do. Nothing is changed.</span>
+    </div>
+    ${st.ok ? '' : `<div class="small text-danger mt-2">${escHtml(st.error || 'SOARCA is unreachable')}</div>`}
+    <div class="d-flex mt-3">
+      <button class="btn btn-sm btn-primary ms-auto" id="soarca-run-btn" onclick="runSoarcaDry()" ${st.ok ? '' : 'disabled'}>
+        <i class="bi bi-play-fill me-1"></i>Dry run on SOARCA</button>
+    </div>
+    <div id="soarca-run-area" class="mt-2"></div>`;
+}
+
+async function runSoarcaDry() {
+  const btn = document.getElementById('soarca-run-btn');
+  const area = document.getElementById('soarca-run-area');
+  btn.disabled = true;
+  area.innerHTML = `<div class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Sending to SOARCA…</div>`;
+  try {
+    const d = await apiFetch('/soarca/dry_run', { method: 'POST', body: JSON.stringify({ cacao: soarcaPlaybook }) });
+    for (let n = 0; n < 40; n++) {
+      const r = await apiFetch(`/soarca/results/${encodeURIComponent(d.execution_id)}`).catch(() => null);
+      if (r && r.status && r.status !== 'ongoing') { renderSoarcaResults(area, r, d); return; }
+      if (r) renderSoarcaResults(area, r, d, true);     // the steps done so far
+      await new Promise(res => setTimeout(res, 1500));
+    }
+    area.innerHTML = '<div class="small text-warning">SOARCA did not finish within a minute.</div>';
+  } catch (e) {
+    area.innerHTML = `<div class="small text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderSoarcaResults(area, r, d, running = false) {
+  const steps = (r.steps || []).map(st => {
+    const body = (st.output || '').replace(/^\[dry run\][^\n]*\n/, '');
+    const cmds = (body.match(/^  \$ /gm) || []).length;
+    const where = (body.match(/^would run on (.+?) \(/m) || [])[1];
+    const http = (body.match(/^would send to .*$/m) || [])[0];
+    return { ok: st.status === 'successfully_executed', name: st.name, summary: st.error || '',
+             detail: body.trim() };
+  });
+  // Steps on the branch the dry run does not take: listed as skipped, after their decision
+  for (const sk of (running ? [] : d.skipped || [])) {
+    const at = steps.findIndex(x => x.name === sk.after);
+    steps.splice(at < 0 ? steps.length : at + 1, 0,
+                 { ok: true, skipped: true, name: sk.name, summary: `skipped: ${sk.reason}`, detail: '' });
+  }
+  const ok = r.status === 'successfully_executed';
+  const waiting = r.status === 'await_user_input';
+  if (!running) lastRunJson.soarca = r.raw || r;
+  area.innerHTML = stepsReportHtml({
+    ok, running, total: d.steps, steps, tone: waiting ? 'warning' : undefined,
+    label: RUN_STATUS[r.status] || String(r.status || 'UNKNOWN').toUpperCase(),
+    notes: [...(d.warnings || []), ...(ok || running ? [] : [r.status_text || ''])],
+    json: running ? null : { ...jsonTools('soarca'), data: lastRunJson.soarca },
+  });
+  if (!running) setTabState('soarca', ok ? 'ok' : 'fail');
+}
+
+/* One results layout for both platforms: a line per step (status, name, short summary),
+   its full output folded underneath. */
+/* One results layout for both platforms: per step its status and name, then what it
+   did (SOARCA: the dry-run text; Shuffle: the reason when it failed, and its output). */
+/* Same status words on both platforms (raw statuses: SOARCA reporter / Shuffle execution):
+     RUNNING                ongoing                        EXECUTING
+     WAITING FOR INPUT      await_user_input               WAITING (user input node)
+     COMPLETED              successfully_executed          FINISHED, every node ok
+     COMPLETED WITH ERRORS  -                              FINISHED, some node failed
+     FAILED                 failed, *_error                FAILURE
+     TIMED OUT              timeout_error                  -
+     ABORTED                -                              ABORTED                    */
+const RUN_STATUS = {
+  successfully_executed: 'COMPLETED', ongoing: 'RUNNING', await_user_input: 'WAITING FOR INPUT',
+  timeout_error: 'TIMED OUT', failed: 'FAILED', server_side_error: 'FAILED',
+  client_side_error: 'FAILED', exception_condition_error: 'FAILED',
+  EXECUTING: 'RUNNING', WAITING: 'WAITING FOR INPUT', ABORTED: 'ABORTED', FAILURE: 'FAILED',
+};
+let lastRunJson = {};          // tool -> its raw execution JSON (View / Copy JSON)
+let reportSeq = 0;
+function jsonTools(tool) {
+  const id = `exec-json-${tool}-${++reportSeq}`;
+  return { id, html: `
+    <button class="btn btn-outline-secondary btn-sm py-0" data-bs-toggle="collapse" data-bs-target="#${id}">
+      <i class="bi bi-braces me-1"></i>View JSON</button>
+    <button class="btn btn-outline-primary btn-sm py-0" onclick="copyRunJson('${tool}', this)">
+      <i class="bi bi-clipboard me-1"></i>Copy JSON</button>` };
+}
+function copyRunJson(tool, btn) {
+  navigator.clipboard.writeText(JSON.stringify(lastRunJson[tool], null, 2)).then(() => {
+    btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy JSON'; }, 1500);
+  });
+}
+function stepsReportHtml({ ok, label, total, steps, notes = [], tools = '', running = false, json = null, tone }) {
+  const skipped = steps.filter(x => x.skipped).length;
+  const good = steps.filter(x => x.ok && !x.skipped).length;
+  const bad = steps.length - good - skipped;
+  const n = total ?? steps.length;
+  return `
+    <div class="rounded border p-2 exec-report">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge bg-${running ? 'primary' : tone || (ok ? 'success' : 'danger')}">${running
+          ? '<span class="spinner-border spinner-border-sm me-1" style="width:.6rem;height:.6rem"></span>RUNNING'
+          : escHtml(label)}</span>
+        <span class="text-muted">${running ? `${steps.length} of ${n} step${n !== 1 ? 's' : ''} done`
+          : `${good} of ${n} step${n !== 1 ? 's' : ''} ok`}${bad ? ` · <span class="text-danger">${bad} failed</span>` : ''}${skipped ? ` · ${skipped} skipped` : ''}</span>
+        <span class="ms-auto d-flex gap-2">${json ? json.html : ''}${tools}</span>
+      </div>
+      ${json ? `<div class="collapse mb-2" id="${json.id}"><pre class="mb-0 px-2 py-1 rounded"
+        style="max-height:22rem;overflow:auto;word-break:break-all">${escHtml(JSON.stringify(json.data, null, 2))}</pre></div>` : ''}
+      ${notes.filter(Boolean).map(n => `<div class="text-muted mb-1">· ${escHtml(n)}</div>`).join('')}
+      ${steps.map((x, i) => `
+        <div class="mb-2">
+          <div class="d-flex gap-2 align-items-baseline">
+            <i class="bi ${x.skipped ? 'bi-skip-forward-circle-fill text-secondary' : x.ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}"></i>
+            <span class="fw-semibold">${i + 1}. ${escHtml(x.name || '—')}</span>
+            ${x.summary ? `<span class="${x.ok ? 'text-muted' : 'text-danger'}">${escHtml(x.summary)}</span>` : ''}
+          </div>
+          ${x.detail ? `<pre class="mb-0 mt-1 ms-4 px-2 py-1 rounded">${escHtml(x.detail)}</pre>` : ''}
+        </div>`).join('') || '<span class="text-muted">No step results.</span>'}
+    </div>`;
+}
+
+function setTabState(tool, state) {
+  const el = document.getElementById(`exec-tab-${tool}-state`);
+  if (el) el.innerHTML = state === 'ok' ? '<i class="bi bi-check-circle-fill text-success"></i>'
+    : state === 'fail' ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '';
+}
+
+function renderShuffleWorkflow(d) {
+  shuffleNodes = d.nodes || 0;
+  const MODE = {
+    shuffle: ['', 'Shuffle workflow (Run ssh command, http)',
+              "Built as in Shuffle's editor: each step acting on a machine is a Run ssh command node on the victim, HTTP steps are http nodes"],
+    dry_run: ['tier-MEDIUM', 'Dry run: commands are only shown',
+              'Every command is an echo node: the run shows what would be done and changes nothing'],
+  }[d.mode] || ['', d.mode, ''];
+  const warns = d.warnings || [];
+  const uiBase = d.url.replace(/\/workflows\/.*$/, '');
   document.getElementById('shuffle-body').innerHTML = `
-    <div class="d-flex align-items-center gap-2 mb-3">
-      <span class="badge bg-primary rounded-pill">1</span>
-      <span class="small fw-semibold">Open &amp; run the workflow in Shuffle</span>
-    </div>
-    ${wid ? `<div class="mb-2 ps-4">
-      <span class="text-muted" style="font-size:.75rem">Workflow ID: </span>
-      <code style="font-size:.75rem">${escHtml(wid)}</code>
-    </div>` : ''}
-    <a href="${escHtml(url)}" target="_blank" rel="noopener" class="btn btn-success btn-sm mb-4 ms-4">
-      <i class="bi bi-box-arrow-up-right me-1"></i>Open in Shuffle
-    </a>
-    <hr>
-    <div class="d-flex align-items-center gap-2 mb-2">
-      <span class="badge bg-secondary rounded-pill">2</span>
-      <span class="small fw-semibold">Paste the execution URL or ID to fetch results</span>
-    </div>
-    <div class="ps-4">
-      <div class="small text-muted mb-1">
-        From Shuffle, copy the URL (it contains <code>?execution_id=…</code>) or just the ID.
+    <div class="mb-3">
+      <div class="small text-muted mb-2">${d.mode === 'dry_run'
+        ? 'Shuffle is in dry-run mode: every command is only echoed.'
+        : warns.some(w => w.includes('SSH credentials') || w.includes('affected host'))
+        ? 'Runs the commands over SSH on the affected machine: fill Host and its credentials on the nodes in Shuffle first.'
+        : 'Runs the playbook for real: every step is ready, nothing to fill in Shuffle.'}</div>
+      <span class="${MODE[0] ? 'tier-badge ' + MODE[0] : 'path-badge'}" title="${escHtml(MODE[2])}">${escHtml(MODE[1])}</span>
+      <span class="small text-muted ms-2">${d.nodes} node${d.nodes !== 1 ? 's' : ''} ·
+        ${d.reused ? 'reused' : 'created now'}</span>
+      ${warns.length ? `<a href="#" class="ms-2 small text-decoration-none" data-bs-toggle="collapse"
+           data-bs-target="#shuffle-warns">${warns.length} warning${warns.length > 1 ? 's' : ''}</a>
+         <div class="collapse mt-2 small text-muted" id="shuffle-warns">
+           ${warns.map(w => `<div>· ${escHtml(w)}</div>`).join('')}</div>` : ''}
+      <div class="d-flex gap-2 mt-3">
+        <a href="${escHtml(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Open in Shuffle</a>
+        <button class="btn btn-sm btn-primary ms-auto" id="shuffle-run-btn"
+                onclick="runShuffleWorkflow('${escAttr(d.workflow_id)}', '${escAttr(d.url)}')">
+          <i class="bi bi-play-fill me-1"></i>Run now</button>
       </div>
-      <div class="input-group input-group-sm mb-2">
-        <input type="text" id="shuffle-exec-input" class="form-control font-monospace"
-               placeholder="${escHtml((cfg.ui_url || '').replace(/\/$/, ''))}/workflows/…?execution_id=… or just the UUID">
-        <button class="btn btn-outline-info" onclick="fetchShuffleResults()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Fetch Results
-        </button>
+    </div>
+    <div id="shuffle-run-area"></div>
+    ${manualResultsHtml(uiBase, false)}`;
+}
+
+async function runShuffleWorkflow(wid, url) {
+  const btn = document.getElementById('shuffle-run-btn');
+  const area = document.getElementById('shuffle-run-area');
+  btn.disabled = true;
+  area.innerHTML = `<div class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Starting…</div>`;
+  try {
+    const ex = await apiFetch(`/playbooks/${encodeURIComponent(wid)}/execute`, { method: 'POST', body: '{}' });
+    const eid = ex.execution_id;
+    const link = `${url}?execution_id=${encodeURIComponent(eid)}`;
+    // Poll until Shuffle reports a final status (about 2 minutes at most)
+    for (let n = 0; n < 60; n++) {
+      const data = await apiFetch(`/shuffle/results/${encodeURIComponent(eid)}`).catch(() => null);
+      const status = (data && data.status) || 'EXECUTING';
+      if (['FINISHED', 'ABORTED', 'FAILURE', 'WAITING'].includes(status)) {
+        renderShuffleResults(area, data);
+        area.insertAdjacentHTML('beforeend', `<div class="mt-2 small">
+          <a href="${escHtml(link)}" target="_blank" rel="noopener" class="text-decoration-none">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Open this execution in Shuffle</a></div>`);
+        return;
+      }
+      if (data && (data.results || []).length) {     // the steps done so far
+        renderShuffleResults(area, data, true);
+        area.insertAdjacentHTML('beforeend', `<div class="mt-2 small"><a href="${escHtml(link)}" target="_blank"
+          rel="noopener" class="text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>Watch it in Shuffle</a></div>`);
+      } else {
+        area.innerHTML = `<div class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>
+          Starting in Shuffle… · <a href="${escHtml(link)}" target="_blank" rel="noopener" class="text-decoration-none">watch it in Shuffle</a></div>`;
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    area.innerHTML = `<div class="small text-warning">Still running after 2 minutes ·
+      <a href="${escHtml(link)}" target="_blank" rel="noopener">follow it in Shuffle</a></div>`;
+  } catch (e) {
+    area.innerHTML = `<div class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* Manual path: a run started inside Shuffle, fetched by its execution URL or id */
+function manualResultsHtml(uiBase, open) {
+  return `
+    <div class="mt-2">
+      <div class="small text-muted mb-1">Fetch results of a run started in Shuffle</div>
+      <div id="shuffle-manual">
+        <div class="input-group input-group-sm mb-2">
+          <input type="text" id="shuffle-exec-input" class="form-control font-monospace"
+                 placeholder="${escHtml(uiBase.replace(/\/$/, ''))}/workflows/…?execution_id=… or just the UUID">
+          <button class="btn btn-outline-primary" onclick="fetchShuffleResults()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Fetch results</button>
+        </div>
+        <div id="shuffle-results-area"></div>
       </div>
-      <div id="shuffle-results-area"></div>
     </div>`;
 }
 
@@ -676,44 +948,85 @@ function summariseResult(r) {
   return first.slice(0, 80) + (first.length > 80 ? '…' : '');
 }
 
-function renderShuffleResults(area, data) {
+
+/* A node's real outcome: Shuffle marks a node SUCCESS once it ran, even when the app
+   inside reports failure ({"success": false, "message": ...}, e.g. SSH could not connect). */
+function shuffleNodeOutcome(r) {
+  let raw = r.result ?? '', obj = null;
+  if (typeof raw !== 'string') { try { raw = JSON.stringify(raw); } catch (_) { raw = String(raw); } }
+  let s = raw;
+  for (let i = 0; i < 3; i++) {
+    try { const p = JSON.parse(s); if (p && typeof p === 'object') { obj = p; break; } s = p; } catch (_) { break; }
+  }
+  const nodeStatus = (r.status || '').toUpperCase();
+  if (nodeStatus === 'SKIPPED') {
+    // Not run: a branch condition did not hold, or an earlier node was skipped
+    const why = String((obj && obj.reason) || '');
+    return { ok: true, skipped: true, detail: '',
+             summary: /branch's conditions/.test(why) ? 'skipped: its branch condition did not hold'
+                    : /previous node/.test(why) ? 'skipped: the step before it was skipped' : why || 'skipped' };
+  }
+  const httpError = obj && typeof obj.status === 'number' && obj.status >= 400;
+  const appFailed = obj && (obj.success === false || obj.success === 'false');
+  const ok = nodeStatus === 'SUCCESS' && !appFailed && !httpError;
+  let summary;
+  if (httpError) {
+    const err = obj.body && (obj.body.error || obj.body.message || obj.body);
+    const msg = typeof err === 'object' ? (err.message || err.code || JSON.stringify(err)) : String(err || '');
+    summary = `HTTP ${obj.status}${msg ? `: ${msg}` : ''}`;
+  } else if (appFailed) {
+    const msg = String(obj.message || obj.reason || obj.error_logs || 'failed').trim();
+    const why = /Errno -[23]|Name or service not known|not known/i.test(msg) ? 'host name not found: set Host to the machine\'s IP'
+      : /Authentication failed|No authentication methods|auth/i.test(msg) ? 'SSH login refused: check User name and key or password'
+      : /timed out|Errno 11[03]|No route/i.test(msg) ? 'host unreachable from Shuffle'
+      : /Connection refused/i.test(msg) ? 'SSH port closed on the host' : '';
+    summary = why ? `${why} (${msg})` : msg;
+  } else if (obj && (obj.stdout !== undefined || obj.stderr !== undefined)) {
+    summary = String(obj.stdout || obj.stderr || '').trim().split('\n')[0] || 'no output';
+  } else {
+    summary = summariseResult(r);
+  }
+  let detail;
+  if (obj && (obj.output !== undefined || obj.error_logs !== undefined) && !appFailed) {
+    // Run ssh command: what the command printed (nothing, for most firewall commands)
+    detail = [obj.output, obj.error_logs ? `stderr:\n${obj.error_logs}` : ''].filter(Boolean).join('\n').trim();
+    summary = detail ? '' : 'done (the command printed nothing)';
+  } else if (obj && (obj.stdout !== undefined || obj.stderr !== undefined))
+    detail = [obj.stdout, obj.stderr ? `stderr:\n${obj.stderr}` : ''].filter(Boolean).join('\n').trim();
+  else if (appFailed || httpError) detail = '';
+  else if (obj && typeof obj.status === 'number')     // http: the answer, on one line
+    detail = JSON.stringify(obj.body ?? '');
+  else if (obj) detail = JSON.stringify(obj);
+  else { detail = String(raw).trim(); summary = detail ? '' : 'no output'; }   // plain text: shown as is
+  if (detail.trim() === String(summary).trim()) detail = '';
+  if (detail.length > 400) detail = detail.slice(0, 400) + ' … (full output: Copy JSON)';
+  return { ok, summary, detail };
+}
+
+function renderShuffleResults(area, data, running = false) {
   const status = data.status || 'UNKNOWN';
-  const statusClass = { FINISHED: 'success', EXECUTING: 'warning', ABORTED: 'danger' }[status] ?? 'secondary';
   const results = Array.isArray(data.results) ? data.results : [];
-  const succeeded = results.filter(r => (r.status || '').toUpperCase() === 'SUCCESS').length;
-  const failed    = results.filter(r => (r.status || '').toUpperCase() === 'FAILURE').length;
-
-  const rows = results.map(r => {
-    const s = (r.status || '').toUpperCase();
-    const dot = s === 'SUCCESS' ? '🟢' : '🔴';
-    const name = escHtml(r.action?.label || r.action?.name || r.action?.app_name || '—');
-    const summary = escHtml(summariseResult(r) || '—');
-    return `<tr>
-      <td class="small" style="white-space:nowrap">${dot} ${name}</td>
-      <td class="small text-muted">${summary}</td>
-    </tr>`;
-  }).join('');
-
-  const countLine = `${succeeded} succeeded`
-    + (failed ? ` · <span class="text-danger">${failed} failed</span>` : '')
-    + ` · ${results.length} action${results.length !== 1 ? 's' : ''}`;
-
-  area.innerHTML = `
-    <div class="mt-2 rounded border p-2" style="font-size:.82rem">
-      <div class="d-flex align-items-center gap-2 mb-2">
-        <span class="badge bg-${statusClass}">${escHtml(status)}</span>
-        <span class="text-muted small">${countLine}</span>
-        <button class="btn btn-outline-secondary btn-sm ms-auto py-0 px-1" style="font-size:.7rem"
-                onclick="navigator.clipboard.writeText(${JSON.stringify(JSON.stringify(data, null, 2))})">
-          <i class="bi bi-clipboard"></i> JSON
-        </button>
-      </div>
-      ${results.length
-        ? `<table class="table table-borderless table-sm mb-0">
-             <tbody>${rows}</tbody>
-           </table>`
-        : '<span class="text-muted">No action results.</span>'}
-    </div>`;
+  // In the order they ran; skipped nodes (no start time) last
+  const ordered = [...results].sort((a, b) => (a.started_at || Infinity) - (b.started_at || Infinity));
+  // Node labels are the step names with punctuation turned into "_": show the step names
+  const stepName = {};
+  for (const st of Object.values((shufflePlaybook && shufflePlaybook.workflow) || {}))
+    if (st && st.name) stepName[st.name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')] = st.name;
+  const steps = ordered.map(r => {
+    const label = r.action?.label || r.action?.name || r.action?.app_name || '';
+    return { name: stepName[label] || label.replace(/_/g, ' '), ...shuffleNodeOutcome(r) };
+  });
+  const ok = status === 'FINISHED' && steps.every(x => x.ok);
+  if (!running) lastRunJson.shuffle = data;
+  area.innerHTML = stepsReportHtml({
+    ok, running, steps, total: running ? shuffleNodes : undefined,
+    tone: status === 'WAITING' ? 'warning' : undefined,
+    label: status === 'FINISHED' ? (ok ? 'COMPLETED' : 'COMPLETED WITH ERRORS')
+         : RUN_STATUS[status] || status,
+    json: running ? null : { ...jsonTools('shuffle'), data },
+  });
+  if (running) return;
+  setTabState('shuffle', ok ? 'ok' : 'fail');
 
   fetch('/api/shuffle/results/log', {
     method: 'POST',

@@ -1,0 +1,27 @@
+[
+  {
+    "file": "valid_block_ip.json",
+    "title": "Valid: block an SSH brute-force source",
+    "expect": "All criteria pass."
+  },
+  {
+    "file": "invalid_structure.json",
+    "title": "Invalid: broken links, a loop, a missing field",
+    "expect": "CACAO compliance and Workflow structure fail."
+  },
+  {
+    "file": "unsafe_commands.json",
+    "title": "Unsafe: log destruction, firewall flush, curl | sh",
+    "expect": "Safety policy warnings; the LLM review flags the harmful side effects."
+  },
+  {
+    "file": "bad_commands.json",
+    "title": "Invalid commands: typo, plain text, unclosed quote",
+    "expect": "Bash syntax fails; the LLM review flags the commands that are not real."
+  },
+  {
+    "file": "wrong_logic.json",
+    "title": "Wrong logic: evidence after deletion, step does not do its job",
+    "expect": "Every rule-based check passes; only the LLM review finds the problems."
+  }
+]
