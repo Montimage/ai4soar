@@ -8,7 +8,7 @@ techniques:
   - T1059.004
 tactics:
   - execution
-description: "Kill the malicious process and optionally isolate the affected host"
+description: "Kill the malicious process on the affected host and collect forensic evidence"
 
 parameters:
   hostname:
@@ -20,7 +20,7 @@ parameters:
       - hostname
     description: "Host where malicious execution was detected"
   process_name:
-    type: string
+    type: text
     required: false
     sources:
       - _source.data.win.eventdata.image
@@ -41,6 +41,11 @@ parameters:
       - _source.data.dstuser
       - _source.data.win.eventdata.subjectUserName
     description: "User account under which the process ran"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -52,6 +57,28 @@ cacao:
     - remediation
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--2bc38c28-b027-5a01-9cdc-e484236ecac2:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -59,32 +86,44 @@ cacao:
     # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
     step--start:
       type: start
-      on_completion: "step--kill-process"
+      on_completion: "step--collect-evidence"
 
     step--kill-process:
       type: action
-      name: "Kill malicious process"
+      name: "Kill {{process_name}} on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--2bc38c28-b027-5a01-9cdc-e484236ecac2"]
       commands:
         - type: bash
-          command: "pkill -9 -f '{{process_name}}' || taskkill /F /IM '{{process_name}}' 2>/dev/null"
-      on_success: "step--collect-evidence"
-      on_failure: "step--collect-evidence"
+          # A path: kill what runs that file (fuser). A name: kill the process of that
+          # exact name. Not
+          # "pkill -f": it also matched the shell running this step
+          command: |
+            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--notify"
+      on_failure: "step--notify"
     step--collect-evidence:
       type: action
-      name: "Collect forensic evidence"
+      name: "Collect process and connection snapshot from {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--2bc38c28-b027-5a01-9cdc-e484236ecac2"]
       commands:
         - type: bash
-          command: "ps aux > /tmp/ai4soar_snapshot_$(date +%s).txt && netstat -an >> /tmp/ai4soar_snapshot_$(date +%s).txt"
-      on_completion: "step--notify"
+          # Before the kill: the process tree and its connections are the evidence
+          command: |
+            ps auxf > /root/ai4soar_snapshot_procs.txt
+            ss -tanp > /root/ai4soar_snapshot_conns.txt
+      on_completion: "step--kill-process"
     step--notify:
       type: action
       name: "Escalate to SOC"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Malicious Execution on {{hostname}}","severity":"high","process":"{{process_name}}","user":"{{username}}","technique":"T1059"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Malicious Execution on {{hostname}}","severity":"high","process":"{{process_name}}","user":"{{username}}","technique":"T1059"}'
       on_completion: "step--end"
     step--end:
       type: end

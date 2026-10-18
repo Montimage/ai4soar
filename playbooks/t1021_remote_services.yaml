@@ -51,6 +51,11 @@ parameters:
       - data.protocol
     default: "unknown"
     description: "Protocol used (ssh, rdp, smb, ...)"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -62,6 +67,28 @@ cacao:
     - prevention
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--c362ce6d-6420-5b0b-ae38-8a30487c6176:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -73,28 +100,40 @@ cacao:
 
     step--block-src:
       type: action
-      name: "Block lateral movement source"
+      # Contain the whole source host, not one src->dst pair: a host moving laterally
+      # is compromised, and dst_ip is optional (the rule would fail without it).
+      name: "Block lateral movement source {{src_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--c362ce6d-6420-5b0b-ae38-8a30487c6176"]
       commands:
         - type: bash
-          command: "iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP"
+          command: >
+            iptables -I INPUT -s {{src_ip}} -j DROP
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED lateral movement source {{src_ip}}" >> /var/log/ai4soar_blocks.log
       on_success: "step--isolate-account"
-      on_failure: "step--notify"
+      on_failure: "step--isolate-account"
     step--isolate-account:
       type: action
-      name: "Lock account used for lateral movement"
+      # -L locks the password, -e 1 expires the account so SSH keys stop working too
+      name: "Lock account {{username}} used for lateral movement"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--c362ce6d-6420-5b0b-ae38-8a30487c6176"]
       commands:
         - type: bash
-          command: "usermod -L {{username}} 2>/dev/null || echo 'Account lock requires AD/LDAP integration'"
+          command: >
+            usermod -L -e 1 {{username}}
+            || echo "Account lock failed on {{hostname}}: domain accounts need AD/LDAP integration"
       on_completion: "step--notify"
     step--notify:
       type: action
       name: "Alert SOC of lateral movement"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Lateral Movement {{src_ip}}→{{dst_ip}}","severity":"critical","technique":"T1021","protocol":"{{protocol}}","user":"{{username}}"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Lateral Movement {{src_ip}}→{{dst_ip}}","severity":"critical","technique":"T1021","protocol":"{{protocol}}","user":"{{username}}"}'
       on_completion: "step--end"
     step--end:
       type: end

@@ -42,6 +42,11 @@ parameters:
       - _source.data.srcuser
       - data.srcuser
     description: "User context performing the transfer"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -54,6 +59,28 @@ cacao:
     - remediation
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--a12cb621-1609-58f5-b6fd-17f773136ba5:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -66,62 +93,68 @@ cacao:
     step--block-transfer:
       type: action
       name: "Block outbound exfiltration traffic from {{src_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--a12cb621-1609-58f5-b6fd-17f773136ba5"]
       commands:
         - type: bash
+          # On the exfiltrating host: drop everything it sends to the destination
           command: >
-            iptables -I OUTPUT  -s {{src_ip}} -d {{dst_ip}} -j DROP &&
-            iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP
-        - type: bash
-          command: >
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED exfil {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
+            iptables -I OUTPUT -d {{dst_ip}} -j DROP
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED exfil {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
       on_success: "step--collect-evidence"
       on_failure: "step--collect-evidence"
 
     step--collect-evidence:
       type: action
       name: "Collect network transfer evidence from {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--a12cb621-1609-58f5-b6fd-17f773136ba5"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "netstat -antp 2>/dev/null > /tmp/ai4soar_exfil_net_{{hostname}}.txt;
-             ss -antp 2>/dev/null >> /tmp/ai4soar_exfil_net_{{hostname}}.txt"
+            netstat -antp 2>/dev/null > /tmp/ai4soar_exfil_net_{{hostname}}.txt;
+             ss -antp 2>/dev/null >> /tmp/ai4soar_exfil_net_{{hostname}}.txt
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "lsof -i 2>/dev/null | grep ESTABLISHED >> /tmp/ai4soar_exfil_net_{{hostname}}.txt || true"
+            lsof -i 2>/dev/null | grep ESTABLISHED >> /tmp/ai4soar_exfil_net_{{hostname}}.txt || true
       on_success: "step--terminate-process"
-      on_failure: "step--create-ticket"
+      on_failure: "step--terminate-process"
 
     step--terminate-process:
       type: action
-      name: "Terminate exfiltration process on {{hostname}}"
+      # Close the sockets to the exfiltration destination instead of killing tools by
+      # name: a pattern like "nc" would also kill rsync, systemd-timesyncd, ...
+      name: "Close connections from {{hostname}} to {{dst_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--a12cb621-1609-58f5-b6fd-17f773136ba5"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "fuser -k {{dst_ip}} 2>/dev/null || true;
-             pkill -9 -f 'curl\|wget\|nc\|ncat\|socat\|scp\|ftp' 2>/dev/null || true"
+            ss -tnp dst {{dst_ip}} > /tmp/ai4soar_exfil_procs_{{hostname}}.txt; ss -K dst {{dst_ip}}
       on_success: "step--lock-user"
-      on_failure: "step--create-ticket"
+      on_failure: "step--lock-user"
 
     step--lock-user:
       type: action
       name: "Lock user account {{username}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--a12cb621-1609-58f5-b6fd-17f773136ba5"]
       commands:
         - type: bash
-          command: "usermod -L {{username}} 2>/dev/null || true"
+          command: >
+            usermod -L -e 1 {{username}}
       on_completion: "step--create-ticket"
 
     step--create-ticket:
       type: action
       name: "Create exfiltration incident ticket"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: >
+            Content-Type: ["application/json"]
+          content: >
             {
               "title":     "Data Exfiltration from {{hostname}} ({{src_ip}}) to {{dst_ip}}",
               "severity":  "critical",

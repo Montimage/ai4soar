@@ -1,0 +1,181 @@
+id: pb-t1110-ip-reputation-block
+name: "Check Attacker IP Reputation and Block if Malicious"
+version: "1.0"
+techniques:
+  - T1110
+  - T1110.001
+  - T1110.003
+tactics:
+  - credential-access
+# The tested response for SSH brute force: an alert from these Wazuh rules gets this
+# playbook alone, instead of every T1110 template (Path A)
+alert_match:
+  rule_ids: ["5712", "5720", "5763"]
+description: "Look up the attacking IP on VirusTotal; if security vendors flag it, notify the SOC and block it on the firewall host with iptables, with no human step"
+
+parameters:
+  src_ip:
+    type: ipv4
+    required: true
+    sources:
+      - _source.data.srcip
+      - data.srcip
+      - srcip
+    description: "Attacking IP: looked up on VirusTotal, blocked if malicious"
+  virustotal_api_key:
+    type: string
+    required: false
+    secret: true
+    env: VIRUSTOTAL_API_KEY
+    description: "VirusTotal API key (secret: filled from .env in the Shuffle workflow only)"
+  firewall_host:
+    type: ipv4
+    required: false
+    env: FIREWALL_SSH_HOST
+    description: "Firewall host the IP is blocked on (deployment setting; the demo uses the sandbox at 172.17.0.1)"
+  firewall_port:
+    type: integer
+    required: false
+    env: FIREWALL_SSH_PORT
+    default: 22
+    description: "SSH port of the firewall host"
+  firewall_user:
+    type: string
+    required: false
+    env: FIREWALL_SSH_USER
+    description: "Account on the firewall host allowed to run sudo iptables"
+  firewall_password:
+    type: string
+    required: false
+    secret: true
+    env: FIREWALL_SSH_PASSWORD
+    description: "Its password (secret: filled from .env in the Shuffle workflow only)"
+
+cacao:
+  type: playbook
+  spec_version: cacao-2.0
+  id: playbook--7d3c1f0e-8a2b-4c5d-9e6f-1a2b3c4d5e6f
+  name: Block {{src_ip}} if VirusTotal flags it
+  description: |
+    Look up {{src_ip}} on VirusTotal. If at least one security vendor flags it as malicious,
+    notify the SOC and block it on the firewall host. Runs end to end without a human step.
+  playbook_types:
+    - investigation
+    - prevention
+    - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: AI4SOAR / Shuffle
+      description: Runs the steps; the block acts over SSH on the firewall host
+      address:
+        ipv4:
+          - 127.0.0.1
+    http-api--0f4e2d6a-9b1c-4e7d-8a3f-5c6b7d8e9f01:
+      type: http-api
+      name: VirusTotal API v3
+      address:
+        url:
+          - https://www.virustotal.com
+  target_definitions:
+    ssh--5e1d9c2b-7a4f-4b3e-8d6c-2f1a0b9e8d7c:
+      type: ssh
+      name: Firewall host {{firewall_host}}
+      description: The host whose firewall (iptables) blocks the IP
+      address:
+        ipv4:
+          - '{{firewall_host}}'
+      port: '{{firewall_port}}'
+      authentication_info: user-auth--8c2b4a6d-1e3f-4a5b-9c7d-0e1f2a3b4c5d
+  authentication_info_definitions:
+    user-auth--8c2b4a6d-1e3f-4a5b-9c7d-0e1f2a3b4c5d:
+      type: user-auth
+      name: Firewall account
+      username: '{{firewall_user}}'
+      password: '{{firewall_password}}'
+  workflow_start: step--start
+  workflow:
+    step--start:
+      type: start
+      on_completion: step--vt-lookup
+    step--vt-lookup:
+      type: action
+      name: Look up {{src_ip}} on VirusTotal
+      description: How many security vendors flag the IP as malicious (VirusTotal last analysis)
+      agent: http-api--0f4e2d6a-9b1c-4e7d-8a3f-5c6b7d8e9f01
+      commands:
+        - type: http-api
+          command: GET /api/v3/ip_addresses/{{src_ip}} HTTP/1.1
+          headers:
+            x-apikey:
+              - '{{virustotal_api_key}}'
+            Accept:
+              - application/json
+      out_args:
+        - __vt_malicious__
+      step_extensions:
+        # In Shuffle: the VirusTotal v3 app (Get an IP address report) rather than a raw
+        # http node; "outputs" says where the value is in its answer (JSON body under "body")
+        extension-definition--b3e2ef12-32fb-44cd-bfb3-1de80aea9273:
+          app_name: Virustotal_v3
+          app_version: 1.1.0
+          action: get_an_ip_address_report
+          parameters:
+            apikey: '{{virustotal_api_key}}'
+            url: https://www.virustotal.com
+            ip: '{{src_ip}}'
+          outputs:
+            __vt_malicious__: body.data.attributes.last_analysis_stats.malicious
+      on_completion: step--is-malicious
+    step--is-malicious:
+      type: if-condition
+      name: Flagged as malicious?
+      description: At least one VirusTotal vendor flags the IP
+      condition: '[__vt_malicious__:value > 0]'
+      on_true: step--notify
+      on_false: step--not-malicious
+    step--notify:
+      type: action
+      name: Notify the SOC
+      description: Report the malicious IP and the vendor count before it is blocked
+      agent: linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50
+      commands:
+        - type: manual
+          command: 'Malicious IP {{src_ip}}: flagged by __vt_malicious__:value VirusTotal vendors; blocking it on the firewall host'
+      step_extensions:
+        extension-definition--b3e2ef12-32fb-44cd-bfb3-1de80aea9273:
+          app_name: Shuffle Tools
+          app_version: 1.2.0
+          action: repeat_back_to_me
+          parameters:
+            call: 'Malicious IP {{src_ip}}: flagged by __vt_malicious__:value VirusTotal vendors; blocking it on the firewall host'
+      on_completion: step--block-ip
+    step--not-malicious:
+      type: action
+      name: Not malicious, no action
+      description: Record that VirusTotal does not flag the IP; nothing is blocked
+      agent: linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50
+      commands:
+        - type: manual
+          command: '{{src_ip}} is not flagged by VirusTotal (__vt_malicious__:value vendors): no action taken'
+      step_extensions:
+        extension-definition--b3e2ef12-32fb-44cd-bfb3-1de80aea9273:
+          app_name: Shuffle Tools
+          app_version: 1.2.0
+          action: repeat_back_to_me
+          parameters:
+            call: '{{src_ip}} is not flagged by VirusTotal (__vt_malicious__:value vendors): no action taken'
+      on_completion: step--end
+    step--block-ip:
+      type: action
+      name: Block {{src_ip}} on the firewall host
+      description: Drop all incoming traffic from the IP with the host's built-in firewall
+      agent: linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50
+      targets:
+        - ssh--5e1d9c2b-7a4f-4b3e-8d6c-2f1a0b9e8d7c
+      commands:
+        - type: bash
+          command: sudo iptables -I INPUT -s {{src_ip}} -j DROP
+      on_completion: step--end
+    step--end:
+      type: end

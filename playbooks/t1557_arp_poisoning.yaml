@@ -24,6 +24,11 @@ parameters:
       - _source.agent.name
       - agent.name
     description: "Sensor/host that observed the conflicting ARP frames"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -34,6 +39,28 @@ cacao:
   playbook_types:
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--98baaae3-0518-54ac-9909-24a49a4452ab:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -49,15 +76,17 @@ cacao:
     step--capture-evidence:
       type: action
       name: "Capture ARP traffic for {{disputed_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--98baaae3-0518-54ac-9909-24a49a4452ab"]
       commands:
         - type: bash
           command: "timeout 10 tcpdump -i any -c 50 'arp and host {{disputed_ip}}' -w /tmp/arp_evidence_{{disputed_ip}}_$(date +%s).pcap"
-      on_success: "step--flush-cache"
-      on_failure: "step--flush-cache"
       on_completion: "step--flush-cache"
     step--flush-cache:
       type: action
       name: "Flush stale ARP cache entry for {{disputed_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--98baaae3-0518-54ac-9909-24a49a4452ab"]
       commands:
         - type: bash
           # Non-destructive: forces re-resolution rather than blocking
@@ -68,12 +97,13 @@ cacao:
     step--notify:
       type: action
       name: "Create investigation ticket for manual MAC verification"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"ARP conflict on {{disputed_ip}}","severity":"medium","host":"{{hostname}}","disputed_ip":"{{disputed_ip}}","technique":"T1557","action_required":"verify_mac_ownership_manually"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"ARP conflict on {{disputed_ip}}","severity":"medium","host":"{{hostname}}","disputed_ip":"{{disputed_ip}}","technique":"T1557","action_required":"verify_mac_ownership_manually"}'
       on_completion: "step--end"
     step--end:
       type: end

@@ -34,12 +34,17 @@ parameters:
       - _source.data.win.eventdata.subjectUserName
     description: "User account performing the collection"
   file_path:
-    type: string
+    type: text
     required: false
     sources:
       - _source.syscheck.path
       - _source.data.win.eventdata.targetFilename
     description: "File or directory being staged"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -51,6 +56,28 @@ cacao:
     - investigation
     - prevention
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--b78b919b-445f-5085-81fe-0597bb4a5249:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -62,28 +89,44 @@ cacao:
 
     step--isolate-host:
       type: action
-      name: "Block outbound data transfer from host"
+      # Everything the host sends is dropped, open connections included (an upload in
+      # progress), except SSH replies so the responders keep access and loopback so
+      # local services keep talking to each other. Inbound services keep running.
+      name: "Block outbound data transfer from {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--b78b919b-445f-5085-81fe-0597bb4a5249"]
       commands:
         - type: bash
-          command: "iptables -I OUTPUT -s {{hostname}} -j DROP 2>/dev/null || echo 'Apply network isolation via EDR/NAC'"
+          command: |
+            iptables -I OUTPUT 1 -o lo -j ACCEPT
+            iptables -I OUTPUT 2 -p tcp --sport 22 -j ACCEPT
+            iptables -I OUTPUT 3 -j DROP
+            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED outbound from {{hostname}} ({{src_ip}}), SSH replies only" >> /var/log/ai4soar_blocks.log
       on_success: "step--preserve-evidence"
       on_failure: "step--preserve-evidence"
     step--preserve-evidence:
       type: action
-      name: "Preserve staged files and process list"
+      name: "Preserve staged files and process list on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--b78b919b-445f-5085-81fe-0597bb4a5249"]
       commands:
         - type: bash
-          command: "ls -lah '{{file_path}}' 2>/dev/null; ps aux > /tmp/ai4soar_procs_$(date +%s).txt; find /tmp /var/tmp -newer /etc/passwd -ls 2>/dev/null >> /tmp/ai4soar_staged_$(date +%s).txt"
+          command: >
+            f=/tmp/ai4soar_collection_$(date +%s).txt;
+             ls -lah -- '{{file_path}}' > $f 2>&1;
+             ps auxf >> $f;
+             find /tmp /var/tmp /dev/shm -mmin -1440 -type f -ls >> $f 2>/dev/null
       on_completion: "step--notify"
     step--notify:
       type: action
       name: "Escalate data collection alert"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Suspicious Data Collection on {{hostname}}","severity":"high","host":"{{hostname}}","user":"{{username}}","file":"{{file_path}}","technique":"T1074"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Suspicious Data Collection on {{hostname}}","severity":"high","host":"{{hostname}}","user":"{{username}}","file":"{{file_path}}","technique":"T1074"}'
       on_completion: "step--end"
     step--end:
       type: end

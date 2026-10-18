@@ -7,7 +7,7 @@ techniques:
   - T1566.002
 tactics:
   - initial-access
-description: "Quarantine the phishing email, block the sender domain, and notify the recipient"
+description: "Quarantine the phishing email, block the sender address, and notify the recipient"
 
 parameters:
   email_sender:
@@ -19,7 +19,7 @@ parameters:
       - data.srcuser
     description: "Phishing email sender address"
   email_subject:
-    type: string
+    type: text
     required: false
     sources:
       - _source.data.email.subject
@@ -39,17 +39,59 @@ parameters:
       - _source.data.srcip
       - data.srcip
     description: "Sender mail server IP"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
+  mail_api_url:
+    type: url
+    required: false
+    env: MAIL_API_URL
+    description: "Base URL of the mail gateway API (deployment setting, from .env)"
+  mail_server:
+    type: string
+    required: false
+    description: "Postfix server that filters incoming mail (not in the alert: the operator sets it)"
 
 cacao:
   type: playbook
   spec_version: cacao-2.0
   id: "playbook--91525dcf-5146-4a38-b2f6-edd3acaa96f7"
   name: "Quarantine Phishing from {{email_sender}}"
-  description: "Quarantine email from {{email_sender}} to {{username}} and block sender domain"
+  description: "Quarantine email from {{email_sender}} to {{username}} and block the sender address"
   playbook_types:
     - remediation
     - prevention
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+    http-api--0d3e8f21-7a6b-4c5d-8e9f-2a3b4c5d6e7f:
+      type: http-api
+      name: "Mail gateway API"
+      address:
+        url:
+          - "{{mail_api_url}}"
+  target_definitions:
+    ssh--318d9f5c-6ead-50fd-afe6-9937d85c2fdf:
+      type: ssh
+      name: "Mail server {{mail_server}}"
+      description: "The Postfix mail server that filters incoming mail. In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{mail_server}}"
   workflow_start: "step--start"
   workflow:
 
@@ -62,30 +104,40 @@ cacao:
     step--quarantine-email:
       type: action
       name: "Quarantine the phishing email"
+      agent: "http-api--0d3e8f21-7a6b-4c5d-8e9f-2a3b4c5d6e7f"
       commands:
         - type: http-api
-          command: "POST /api/v1/email/quarantine"
+          command: "POST /api/v1/email/quarantine HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"sender":"{{email_sender}}","recipient":"{{username}}","subject":"{{email_subject}}"}'
+            Content-Type: ["application/json"]
+          content: '{"sender":"{{email_sender}}","recipient":"{{username}}","subject":"{{email_subject}}"}'
       on_success: "step--block-sender"
-      on_failure: "step--notify"
+      on_failure: "step--block-sender"
     step--block-sender:
       type: action
-      name: "Block sender domain in mail filter"
+      # Was: "postsuper -d ALL deferred" (deleted EVERY deferred mail in the queue, from
+      # any sender) and a plain address appended to a file postfix never reads. A
+      # postfix access map needs "<key> REJECT", postmap, and a reload. Blocks the sender
+      # ADDRESS: blocking the whole domain would also block e.g. all of gmail.com.
+      name: "Block sender {{email_sender}} in the mail filter"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--318d9f5c-6ead-50fd-afe6-9937d85c2fdf"]
       commands:
         - type: bash
-          command: "postsuper -d ALL deferred 2>/dev/null; echo '{{email_sender}}' >> /etc/postfix/sender_block"
+          command: >
+            echo '{{email_sender}} REJECT phishing (AI4SOAR)' >> /etc/postfix/sender_access
+            && postmap /etc/postfix/sender_access && postfix reload
       on_completion: "step--notify"
     step--notify:
       type: action
-      name: "Notify recipient and SOC"
+      name: "Open a phishing incident for the SOC"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Phishing Email from {{email_sender}}","severity":"high","recipient":"{{username}}","subject":"{{email_subject}}","technique":"T1566"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Phishing Email from {{email_sender}}","severity":"high","recipient":"{{username}}","subject":"{{email_subject}}","technique":"T1566"}'
       on_completion: "step--end"
     step--end:
       type: end

@@ -7,7 +7,7 @@ techniques:
   - T1572
 tactics:
   - command-and-control
-description: "Block outbound C2 traffic at the perimeter, isolate the beaconing host, and extract IOCs for threat intel"
+description: "Block the C2 channel at the perimeter, collect connection and process evidence from the beaconing host, and block the C2 server for the whole network"
 
 parameters:
   src_ip:
@@ -34,6 +34,11 @@ parameters:
       - data.dstip
       - dstip
     description: "External C2 server IP to block"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -45,6 +50,28 @@ cacao:
     - prevention
     - remediation
     - investigation
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--85049bae-30ba-5773-a9d1-5890a736e7ea:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -52,55 +79,62 @@ cacao:
     # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
     step--start:
       type: start
-      on_completion: "step--block-outbound"
+      on_completion: "step--collect-connections"
 
     step--block-outbound:
       type: action
       name: "Block outbound C2 traffic from {{src_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--85049bae-30ba-5773-a9d1-5890a736e7ea"]
       commands:
         - type: bash
           command: >
-            iptables -I OUTPUT -s {{src_ip}} -d {{dst_ip}} -j DROP &&
-            iptables -I FORWARD -s {{src_ip}} -d {{dst_ip}} -j DROP
-        - type: bash
-          command: >
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED C2 {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
-      on_success: "step--collect-connections"
-      on_failure: "step--collect-connections"
+            iptables -I OUTPUT -d {{dst_ip}} -j DROP
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED C2 {{src_ip}} -> {{dst_ip}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--dns-block"
+      on_failure: "step--dns-block"
 
+    # Evidence first: once blocked, the C2 connections drop out of netstat / ss
     step--collect-connections:
       type: action
       name: "Collect active connection evidence from {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--85049bae-30ba-5773-a9d1-5890a736e7ea"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "netstat -antp 2>/dev/null > /tmp/ai4soar_netstat_{{hostname}}.txt;
-             ss -antp 2>/dev/null >> /tmp/ai4soar_netstat_{{hostname}}.txt"
+            netstat -antp 2>/dev/null > /tmp/ai4soar_netstat_{{hostname}}.txt;
+             ss -antp 2>/dev/null >> /tmp/ai4soar_netstat_{{hostname}}.txt
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "ps auxf > /tmp/ai4soar_procs_{{hostname}}.txt 2>/dev/null || true"
-      on_success: "step--dns-block"
-      on_failure: "step--create-ticket"
+            ps auxf > /tmp/ai4soar_procs_{{hostname}}.txt 2>/dev/null || true
+      on_success: "step--block-outbound"
+      on_failure: "step--block-outbound"
 
     step--dns-block:
       type: action
-      name: "Add C2 IP to DNS blocklist"
+      # Outbound to the C2 server is blocked in step 1; this also drops anything the
+      # server sends to the host. Other hosts are protected at the perimeter firewall.
+      name: "Block inbound traffic from C2 server {{dst_ip}} on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--85049bae-30ba-5773-a9d1-5890a736e7ea"]
       commands:
         - type: bash
-          command: "echo '0.0.0.0 {{dst_ip}}' >> /etc/hosts 2>/dev/null || true"
+          command: >
+            iptables -I INPUT -s {{dst_ip}} -j DROP
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED inbound from C2 server {{dst_ip}}" >> /var/log/ai4soar_blocks.log
       on_completion: "step--create-ticket"
 
     step--create-ticket:
       type: action
       name: "Create C2 beaconing incident ticket"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: >
+            Content-Type: ["application/json"]
+          content: >
             {
               "title":     "C2 Beaconing from {{hostname}} ({{src_ip}}) to {{dst_ip}}",
               "severity":  "high",

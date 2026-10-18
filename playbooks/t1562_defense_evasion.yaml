@@ -8,7 +8,7 @@ techniques:
   - T1562.004
 tactics:
   - defense-evasion
-description: "Re-enable disabled AV/EDR and firewall, restore Windows Event Logging, and investigate what disabled them"
+description: "Re-enable disabled AV/EDR and firewall, restore audit logging, and investigate who disabled them"
 
 parameters:
   hostname:
@@ -33,6 +33,11 @@ parameters:
       - _source.data.srcip
       - data.srcip
     description: "Host IP address"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -44,6 +49,28 @@ cacao:
     - remediation
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--8762ae30-c782-5200-b79c-20aa42af388c:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -56,13 +83,14 @@ cacao:
     step--restore-av:
       type: action
       name: "Re-enable AV/EDR service on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--8762ae30-c782-5200-b79c-20aa42af388c"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "systemctl start wazuh-agent 2>/dev/null || true;
+            systemctl start wazuh-agent 2>/dev/null || true;
              systemctl enable wazuh-agent 2>/dev/null || true;
-             systemctl start clamd 2>/dev/null || true"
+             systemctl start clamav-daemon 2>/dev/null || systemctl start clamd@scan 2>/dev/null || echo "No ClamAV service on {{hostname}}"
         - type: bash
           command: >
             echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] AV RE-ENABLED on {{hostname}}" >> /var/log/ai4soar_blocks.log
@@ -72,47 +100,52 @@ cacao:
     step--restore-firewall:
       type: action
       name: "Re-enable host firewall on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--8762ae30-c782-5200-b79c-20aa42af388c"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "systemctl start firewalld 2>/dev/null || ufw enable 2>/dev/null || iptables-restore < /etc/iptables/rules.v4 2>/dev/null || true"
+            systemctl start firewalld 2>/dev/null || ufw --force enable 2>/dev/null || iptables-restore < /etc/iptables/rules.v4 2>/dev/null || true
       on_success: "step--restore-logging"
       on_failure: "step--restore-logging"
 
     step--restore-logging:
       type: action
       name: "Re-enable audit/event logging on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--8762ae30-c782-5200-b79c-20aa42af388c"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "systemctl start auditd 2>/dev/null || true;
+            systemctl start auditd 2>/dev/null || true;
              systemctl enable auditd 2>/dev/null || true;
-             auditctl -e 1 2>/dev/null || true"
+             auditctl -e 1 2>/dev/null || true
       on_success: "step--investigate-actor"
-      on_failure: "step--create-ticket"
+      on_failure: "step--investigate-actor"
 
     step--investigate-actor:
       type: action
       name: "Collect evidence of who disabled defenses"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--8762ae30-c782-5200-b79c-20aa42af388c"]
       commands:
         - type: bash
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "last -20 {{username}} 2>/dev/null > /tmp/ai4soar_actor_{{hostname}}.txt;
-             journalctl -u wazuh-agent --since '1 hour ago' 2>/dev/null >> /tmp/ai4soar_actor_{{hostname}}.txt || true"
+            last -20 {{username}} 2>/dev/null > /tmp/ai4soar_actor_{{hostname}}.txt;
+             journalctl --since '1 hour ago' -u wazuh-agent -u auditd -u ufw -u firewalld -u clamav-daemon 2>/dev/null >> /tmp/ai4soar_actor_{{hostname}}.txt;
+             grep -h 'sudo:' /var/log/auth.log /var/log/secure 2>/dev/null | tail -50 >> /tmp/ai4soar_actor_{{hostname}}.txt || true
       on_completion: "step--create-ticket"
 
     step--create-ticket:
       type: action
       name: "Create defense evasion incident ticket"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: >
+            Content-Type: ["application/json"]
+          content: >
             {
               "title":     "Security Defenses Disabled on {{hostname}}",
               "severity":  "high",

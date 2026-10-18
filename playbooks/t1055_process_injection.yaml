@@ -9,7 +9,7 @@ techniques:
 tactics:
   - privilege-escalation
   - defense-evasion
-description: "Kill the injecting process, dump memory for forensics, and quarantine the host user session"
+description: "Dump memory for forensics, kill the injecting process, and quarantine the host user session"
 
 parameters:
   hostname:
@@ -34,17 +34,52 @@ parameters:
       - _source.data.srcuser
       - data.srcuser
     description: "User running the injecting process"
+  process_name:
+    type: text
+    required: false
+    sources:
+      - _source.data.win.eventdata.sourceImage
+      - _source.data.process.name
+      - data.process.name
+    description: "Injecting process (name or path)"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
   spec_version: cacao-2.0
   id: "playbook--c4f8d2e1-5a9b-4c3d-8e1f-2b6a0c4d7e9f"
   name: "Respond to Process Injection on {{hostname}}"
-  description: "Kill the injecting process on {{hostname}}, collect forensic memory dump, lock user session"
+  description: "Collect a forensic memory dump on {{hostname}}, kill the injecting process, lock the user session"
   playbook_types:
     - investigation
     - remediation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--aa2b2664-9274-571c-a656-d62d81260be7:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -52,55 +87,62 @@ cacao:
     # workflow_start MUST reference it (see data/cacao-schemas/playbook.json).
     step--start:
       type: start
-      on_completion: "step--kill-injector"
+      on_completion: "step--memory-dump"
 
     step--kill-injector:
       type: action
-      name: "Kill injecting process on {{hostname}}"
+      # The previous pattern listed Windows API names (VirtualAlloc, CreateRemoteThread),
+      # which never appear in a process command line, so nothing was ever killed.
+      name: "Kill injecting process {{process_name}} on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--aa2b2664-9274-571c-a656-d62d81260be7"]
       commands:
         - type: bash
-          command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "ps aux --sort=-%cpu | head -20 > /tmp/ai4soar_procs_before.txt;
-             pkill -9 -f 'VirtualAlloc\|WriteProcessMemory\|CreateRemoteThread' 2>/dev/null || true"
-        - type: bash
-          command: >
-            echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED injector on {{hostname}} user={{username}}" >> /var/log/ai4soar_blocks.log
-      on_success: "step--memory-dump"
+          # A path: kill what runs that file (fuser). A name: kill the process of that
+          # exact name. Not
+          # "pkill -f": it also matched the shell running this step (its command line
+          # holds the name)
+          command: |
+            ps auxf > /tmp/ai4soar_procs_before_kill.txt
+            case '{{process_name}}' in /*) fuser -k -KILL '{{process_name}}' ;; *) pkill -KILL -x '{{process_name}}' ;; esac && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] KILLED {{process_name}} on {{hostname}} user={{username}}" >> /var/log/ai4soar_blocks.log
+      on_success: "step--lock-session"
       on_failure: "step--lock-session"
 
+    # Memory first: killing the injector destroys the injected code we want to analyse
     step--memory-dump:
       type: action
       name: "Collect memory dump for forensics"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--aa2b2664-9274-571c-a656-d62d81260be7"]
       commands:
         - type: bash
-          command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "which avml 2>/dev/null && avml /tmp/ai4soar_memdump_$(date +%s).lime || true"
-      on_completion: "step--lock-session"
+          command: |
+            which avml >/dev/null && avml /root/ai4soar_memdump_$(date +%s).lime || echo "avml is not installed: NO memory dump taken, dump memory by hand before the next step kills the process"
+      on_completion: "step--kill-injector"
 
     step--lock-session:
       type: action
       name: "Lock user session for {{username}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--aa2b2664-9274-571c-a656-d62d81260be7"]
       commands:
         - type: bash
-          command: "usermod -L {{username}} 2>/dev/null || true"
-        - type: bash
+          # Lock the account, then end its running sessions
           command: >
-            ssh -o StrictHostKeyChecking=no {{hostname}}
-            "pkill -KILL -u {{username}} 2>/dev/null || true"
+            usermod -L -e 1 {{username}} && pkill -KILL -u {{username}}
       on_success: "step--create-ticket"
       on_failure: "step--create-ticket"
 
     step--create-ticket:
       type: action
       name: "Create process injection incident ticket"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: >
+            Content-Type: ["application/json"]
+          content: >
             {
               "title":     "Process Injection detected on {{hostname}}",
               "severity":  "high",

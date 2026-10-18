@@ -41,6 +41,11 @@ parameters:
       - _source.data.dstip
       - data.dstip
     description: "Target being scanned (if single target)"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -52,6 +57,28 @@ cacao:
     - prevention
     - investigation
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--e7f96b8f-1b3f-5846-91d7-e50c898cd62a:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -63,28 +90,40 @@ cacao:
 
     step--rate-limit:
       type: action
-      name: "Rate-limit scanning traffic from source"
+      # On the scanning host: its new outgoing TCP connections (SYN) are limited to
+      # 10/min. DROP is inserted before ACCEPT so the pair ends up as: ACCEPT up to
+      # 10/min, then DROP (an appended DROP would sit behind rules that accept first).
+      name: "Rate-limit new outgoing connections of {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--e7f96b8f-1b3f-5846-91d7-e50c898cd62a"]
       commands:
         - type: bash
-          command: "iptables -I OUTPUT -s {{src_ip}} -m limit --limit 10/min -j ACCEPT && iptables -A OUTPUT -s {{src_ip}} -j DROP"
+          command: >
+            iptables -I OUTPUT -p tcp --syn ! -o lo -j DROP
+            && iptables -I OUTPUT -p tcp --syn ! -o lo -m limit --limit 10/min -j ACCEPT
       on_success: "step--investigate"
       on_failure: "step--investigate"
     step--investigate:
       type: action
-      name: "Capture active connections and open ports"
+      # On the scanning host: which processes open the connections
+      name: "Capture connections and processes on {{hostname}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--e7f96b8f-1b3f-5846-91d7-e50c898cd62a"]
       commands:
         - type: bash
-          command: "ss -tnp | grep '{{src_ip}}' > /tmp/ai4soar_discovery_$(date +%s).txt; netstat -rn >> /tmp/ai4soar_discovery_$(date +%s).txt"
+          command: >
+            f=/tmp/ai4soar_discovery_$(date +%s).txt; ss -tanp > $f; ps auxf >> $f
       on_completion: "step--notify"
     step--notify:
       type: action
       name: "Alert SOC to reconnaissance activity"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Network Discovery from {{src_ip}}","severity":"medium","src_ip":"{{src_ip}}","host":"{{hostname}}","user":"{{username}}","technique":"T1046"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Network Discovery from {{src_ip}}","severity":"medium","src_ip":"{{src_ip}}","host":"{{hostname}}","user":"{{username}}","technique":"T1046"}'
       on_completion: "step--end"
     step--end:
       type: end

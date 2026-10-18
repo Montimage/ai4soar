@@ -36,6 +36,11 @@ parameters:
       - _source.agent.name
       - agent.name
     description: "Affected host"
+  incident_api_url:
+    type: url
+    required: false
+    env: INCIDENT_API_URL
+    description: "Base URL of the incident / ticketing API (deployment setting, from .env)"
 
 cacao:
   type: playbook
@@ -47,6 +52,28 @@ cacao:
     - remediation
     - prevention
     - notification
+  agent_definitions:
+    linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50:
+      type: linux
+      name: "AI4SOAR / Shuffle"
+      description: "Runs the steps; each one acts over SSH on its target machine"
+      address:
+        ipv4:
+          - "127.0.0.1"
+    http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b:
+      type: http-api
+      name: "Incident / ticketing API"
+      address:
+        url:
+          - "{{incident_api_url}}"
+  target_definitions:
+    ssh--2b62d3f4-0e4e-5540-9519-06d818b1f400:
+      type: ssh
+      name: "Affected host {{hostname}}"
+      description: "The machine the steps act on (the victim). In Shuffle, fill User name and Private key file id (or Password) of an account with root rights on it."
+      address:
+        dname:
+          - "{{hostname}}"
   workflow_start: "step--start"
   workflow:
 
@@ -58,30 +85,41 @@ cacao:
 
     step--disable-account:
       type: action
-      name: "Disable compromised account"
+      # -L locks the password, -e 1 expires the
+      # account (also stops SSH-key logins), pkill ends the sessions already open, as the
+      # description promises. (passwd -l was the same as usermod -L; net user is Windows.)
+      name: "Disable {{username}} on {{hostname}} and end its sessions"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--2b62d3f4-0e4e-5540-9519-06d818b1f400"]
       commands:
         - type: bash
-          command: "usermod -L {{username}} 2>/dev/null || net user {{username}} /active:no 2>/dev/null"
-        - type: bash
-          command: "passwd -l {{username}} 2>/dev/null"
+          command: >
+            usermod -L -e 1 {{username}} && { pkill -KILL -u {{username}}; true; }
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] DISABLED {{username}} on {{hostname}}" >> /var/log/ai4soar_blocks.log
       on_success: "step--block-ip"
       on_failure: "step--block-ip"
     step--block-ip:
       type: action
-      name: "Block attacker IP"
+      name: "Block attacker IP {{src_ip}}"
+      agent: "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
+      targets: ["ssh--2b62d3f4-0e4e-5540-9519-06d818b1f400"]
       commands:
         - type: bash
-          command: "iptables -I INPUT -s {{src_ip}} -j DROP 2>/dev/null || echo 'No src_ip available'"
+          command: >
+            iptables -I INPUT -s {{src_ip}} -j DROP
+            && echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] BLOCKED {{src_ip}} (compromised account {{username}})" >> /var/log/ai4soar_blocks.log
+            || echo "No usable src_ip: attacker IP not blocked"
       on_completion: "step--notify"
     step--notify:
       type: action
       name: "Notify security team and user"
+      agent: "http-api--6f1c2a7e-3b4d-4e5f-9a8b-1c2d3e4f5a6b"
       commands:
         - type: http-api
-          command: "POST /api/v1/incidents"
+          command: "POST /api/v1/incidents HTTP/1.1"
           headers:
-            Content-Type: "application/json"
-          body: '{"title":"Compromised Account: {{username}}","severity":"critical","user":"{{username}}","src_ip":"{{src_ip}}","host":"{{hostname}}","technique":"T1078"}'
+            Content-Type: ["application/json"]
+          content: '{"title":"Compromised Account: {{username}}","severity":"critical","user":"{{username}}","src_ip":"{{src_ip}}","host":"{{hostname}}","technique":"T1078"}'
       on_completion: "step--end"
     step--end:
       type: end
