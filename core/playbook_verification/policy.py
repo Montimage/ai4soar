@@ -37,9 +37,13 @@ POLICY_RULES: Sequence[PolicyRule] = (
     PolicyRule("unscoped_drop",
                re.compile(r"iptables[^\n|;&]*-j\s+DROP", re.I),
                "DROP with no -s/-d/--dport restriction blocks everything"),
+    # pkill -x (exact process name) and pkill -u (one account's processes) are scoped.
+    # Without them pkill matches a pattern anywhere in the name, with -f anywhere in the
+    # command line, which also hits the shell running the step (its script holds it)
     PolicyRule("broad_kill",
-               re.compile(r"\b(pkill|killall)\b|\bkill\s+-9\s+-1\b", re.I),
-               "kills processes by name, not by verified pid"),
+               re.compile(r"\bpkill\b(?![^\n;&|]*\s-(?:[A-Za-z0-9]*[xu]\b|-exact\b|-euid\b))"
+                          r"|\bkillall\b[^\n;&|]*\s-r\b|\bkill\s+-9\s+-1\b"),
+               "kills by pattern match (pkill without -x / -u, killall -r) or every process"),
     PolicyRule("permissive_chmod",
                re.compile(r"\bchmod\s+(-\w+\s+)*777\b", re.I),
                "world-writable permissions"),

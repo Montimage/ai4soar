@@ -43,7 +43,7 @@ class FusedResult:
     playbooks: List[Dict]
     source: str                     # fused | llm_attribution | ml_classifier | no_data
     confidence: float
-    paths_used: List[str]           # subset of ["B", "C"]
+    paths_used: List[str]           # paths that shaped the result: B, C, or B+C (C confirmed B)
     technique_ids: List[str]        = field(default_factory=list)
     technique_names: List[str]      = field(default_factory=list)
     ranked_technique_ids: List[str] = field(default_factory=list)  # Path B full top-k
@@ -99,7 +99,6 @@ def _fuse_b_primary(b: PathResult, c: Optional[PathResult]) -> FusedResult:
     paths  = ["B"]
 
     if c is not None:
-        paths.append("C")
         agreed = False
         if _c_is_tcode(c):
             # T-code model: check technique overlap
@@ -114,8 +113,9 @@ def _fuse_b_primary(b: PathResult, c: Optional[PathResult]) -> FusedResult:
 
         if agreed:
             bonus  = config.orchestration.confirmation_bonus
-            conf   = min(conf + bonus, 1.0)
+            conf   = min(conf + bonus, 0.99)   # Stage 2 never reaches Path A's 1.0
             source = "fused"
+            paths.append("C")   # listed only when it changed the result
             logger.info(
                 f"[Fusion] B+C agree on {agree_on} "
                 f"→ confidence boosted by {bonus:.2f} to {conf:.2f}"

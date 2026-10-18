@@ -75,9 +75,12 @@ class MMTAdapter(AlertAdapter):
             "_id":     f"mmt-{probe_id}-{timestamp}-{code}",
             "_source": {
                 "timestamp": _unix_to_iso(timestamp),
-                "agent": {
+                # The probe saw the traffic; it is not the host the alert is about, so it
+                # is the ECS `observer`, not the `agent` (playbooks act on the agent host)
+                "observer": {
                     "id":   str(probe_id),
                     "name": f"mmt-probe-{probe_id}",
+                    "type": "ids",
                 },
                 "rule": {
                     "id":          str(code),

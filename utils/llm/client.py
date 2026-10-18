@@ -52,6 +52,9 @@ def alert_to_text(alert: Dict) -> str:
     parts: List[str] = []
     if agent.get("name"):
         parts.append(f"Host: {agent['name']}")
+    observer = src.get("observer") or {}
+    if observer.get("name"):   # the network sensor that saw the traffic, not the victim
+        parts.append(f"Sensor: {observer['name']}")
     if rule.get("description"):
         parts.append(f"Rule: {rule['description']}")
     if rule.get("groups"):

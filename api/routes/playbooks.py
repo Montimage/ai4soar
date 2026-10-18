@@ -134,6 +134,55 @@ def get_playbooks():
         return jsonify({'error': str(e)}), 500
 
 
+@playbooks_bp.route('/playbooks/shuffle_library', methods=['GET'])
+def shuffle_library_status():
+    """Per library template: is its Shuffle workflow missing, outdated or current."""
+    from core.orchestration_engine import shuffle_library
+    try:
+        return jsonify({'templates': shuffle_library.status()}), 200
+    except Exception as e:
+        logger.error(f"Error reading the Shuffle library status: {e}")
+        return jsonify({'error': f'Shuffle: {e}'}), 502
+
+
+@playbooks_bp.route('/playbooks/shuffle_library/sync', methods=['POST'])
+def shuffle_library_sync():
+    """Create missing / update outdated library workflows in Shuffle.
+
+    Body (optional): {"only": ["t1110"], "force": false}. Credentials entered in Shuffle are kept.
+    """
+    from core.orchestration_engine import shuffle_library
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify({'results': shuffle_library.sync(data.get('only') or None,
+                                                        force=bool(data.get('force')))}), 200
+    except Exception as e:
+        logger.error(f"Error syncing the library to Shuffle: {e}")
+        return jsonify({'error': f'Shuffle: {e}'}), 502
+
+
+@playbooks_bp.route('/playbooks/shuffle_workflow', methods=['POST'])
+def deploy_to_shuffle():
+    """Create (or reuse) the Shuffle workflow for a recommended playbook.
+
+    Body: {"cacao": <parameterized CACAO 2.0 playbook>, "generated": <true for Path D>}
+    Returns {workflow_id, name, url, mode, reused, nodes, warnings}; the workflow is then
+    run with POST /playbooks/<workflow_id>/execute.
+    """
+    from core.orchestration_engine.shuffle_deploy import ConversionError, deploy_playbook
+    data = request.get_json(silent=True) or {}
+    cacao = data.get('cacao')
+    if not isinstance(cacao, dict) or not cacao.get('workflow'):
+        return jsonify({'error': 'Body must contain a CACAO playbook under "cacao"'}), 400
+    try:
+        return jsonify(deploy_playbook(cacao, generated=bool(data.get('generated')))), 200
+    except (ValueError, ConversionError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error deploying playbook to Shuffle: {e}")
+        return jsonify({'error': f'Shuffle: {e}'}), 502
+
+
 @playbooks_bp.route('/playbooks/<playbook_id>/execute', methods=['POST'])
 def execute_playbook(playbook_id):
     """Execute a playbook by ID."""
@@ -177,6 +226,61 @@ def get_playbook_for_alert(alert_id):
         return jsonify({'error': str(e)}), 500
 
 
+@playbooks_bp.route('/soarca/status', methods=['GET'])
+def soarca_status():
+    """{configured, ok, version, error}: whether the Execute dialog offers a SOARCA dry run."""
+    from core.orchestration_engine.soarca import SoarcaError, status
+    if not config.soarca.url:
+        return jsonify({'configured': False, 'ok': False}), 200
+    try:
+        return jsonify({'configured': True, 'ok': True, 'version': status().get('version')}), 200
+    except SoarcaError as e:
+        return jsonify({'configured': True, 'ok': False, 'error': str(e)}), 200
+
+
+@playbooks_bp.route('/soarca/dry_run', methods=['POST'])
+def soarca_dry_run():
+    """Dry-run a CACAO playbook on SOARCA. Body: {"cacao": <CACAO 2.0>}.
+
+    Returns {execution_id, warnings, steps}; poll GET /soarca/results/<execution_id>.
+    """
+    from core.orchestration_engine.soarca import SoarcaError, run_dry
+    cacao = (request.get_json(silent=True) or {}).get('cacao')
+    if not isinstance(cacao, dict) or not cacao.get('workflow'):
+        return jsonify({'error': 'Body must contain a CACAO playbook under "cacao"'}), 400
+    try:
+        return jsonify(run_dry(cacao)), 200
+    except SoarcaError as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@playbooks_bp.route('/soarca/results/<execution_id>', methods=['GET'])
+def soarca_results(execution_id):
+    from core.orchestration_engine.soarca import SoarcaError, results
+    try:
+        return jsonify(results(execution_id)), 200
+    except SoarcaError as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@playbooks_bp.route('/playbook_library/<template_id>', methods=['PUT'])
+def save_playbook_template(template_id):
+    """Save a template edited in the Workflow view. Body: {"cacao": <CACAO 2.0 dict>}.
+
+    Rewrites the template's cacao: section and bumps its version; the Playbooks page
+    then syncs it to Shuffle.
+    """
+    from core.playbook_library.editing import TemplateEditError, save_template_cacao
+    cacao = (request.get_json(silent=True) or {}).get('cacao')
+    try:
+        return jsonify(save_template_cacao(template_id, cacao)), 200
+    except TemplateEditError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error saving template {template_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @playbooks_bp.route('/playbook_library', methods=['GET'])
 def get_playbook_library():
     """
@@ -208,8 +312,10 @@ def get_playbook_library():
                 }
                 for pname, pdef in raw_params.items()
             ]
+            from core.intelligent_orchestration.parameterizer import template_hash
             entry = {
                 'id':          pb.get('id'),
+                'hash':        template_hash(pb),
                 'name':        pb.get('name'),
                 'version':     pb.get('version', '1.0'),
                 'description': pb.get('description', ''),

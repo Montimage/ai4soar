@@ -12,7 +12,7 @@ Each row becomes one document in the `benchmark_alerts` collection, shaped like 
 canonical envelope the enrichment pipeline and the alerts table already understand:
 
     {timestamp, rule:{description, level, groups}, data:{srcip, dstip, raw_text},
-     agent:{name}, _adapter, _benchmark:{...}}
+     _adapter, _benchmark:{...}}   (no agent: the affected host is unknown)
 
 Two deliberate choices:
 
@@ -170,7 +170,8 @@ def build_document(row: Dict[str, str], texts: Dict[str, str]) -> Dict[str, Any]
             "groups":      groups,
         },
         "data":     data,
-        "agent":    {"name": f"{tool}-sensor"},
+        # No `agent`: the dataset does not say which host the alert is about, and the
+        # sensor is not the victim. Playbooks leave the host empty for the operator.
         "_adapter": tool,
         "_benchmark": {
             "id":           row["id"],

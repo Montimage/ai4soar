@@ -122,12 +122,20 @@ class ShuffleConfig:
     ui_base_url: str = "http://localhost:3001"
     # Default workflow to open until CACAO→Shuffle mapping is in place
     default_workflow_id: str = ""
+    # How recommended playbooks are built when deployed to Shuffle (core/orchestration_engine/
+    # shuffle_deploy.py):
+    #   "shuffle" (default): as built by hand in the editor; a step acting on a machine is
+    #             a Run ssh command node on it (credentials left for the operator to fill),
+    #             http-api steps are http nodes
+    #   "dry_run": every command becomes an echo node (shows what would run, changes nothing)
+    execution_mode: str = "shuffle"
 
     def __post_init__(self):
         self.api_base_url = os.getenv('SHUFFLE_API_BASE_URL', self.api_base_url)
         self.api_token = os.getenv('SHUFFLE_API_TOKEN', self.api_token)
         self.ui_base_url = os.getenv('SHUFFLE_UI_URL', self.ui_base_url)
         self.default_workflow_id = os.getenv('SHUFFLE_DEFAULT_WORKFLOW_ID', self.default_workflow_id)
+        self.execution_mode = os.getenv('SHUFFLE_EXECUTION_MODE', self.execution_mode).strip().lower()
 
     def get_headers(self):
         """Get authorization headers for Shuffle API"""
@@ -138,6 +146,23 @@ class ShuffleConfig:
         if wid:
             return f"{self.ui_base_url}/workflows/{wid}"
         return f"{self.ui_base_url}/workflows"
+
+
+@dataclass
+class SoarcaConfig:
+    """SOARCA (github.com/COSSAS/SOARCA), the open-source CACAO 2.0 orchestrator, run as an
+    external container (docker-compose.soarca.yml). AI4SOAR sends it playbooks to dry-run:
+    every command is echoed on the sandbox SSH host, nothing real is touched."""
+    url: str = ""                          # e.g. http://127.0.0.1:8082; empty = not used
+    sandbox_host: str = "172.30.250.10"    # ipv4: SOARCA's ssh module takes no host names
+    sandbox_user: str = "ai4soar"
+    sandbox_password: str = ""
+
+    def __post_init__(self):
+        self.url = os.getenv("SOARCA_URL", self.url).rstrip("/")
+        self.sandbox_host = os.getenv("SOARCA_SANDBOX_HOST", self.sandbox_host)
+        self.sandbox_user = os.getenv("SOARCA_SANDBOX_USER", self.sandbox_user)
+        self.sandbox_password = os.getenv("SOARCA_SANDBOX_PASSWORD", self.sandbox_password)
 
 
 @dataclass
@@ -294,6 +319,8 @@ class LLMConfig:
     ollama_model: str = "llama3.1"                        # Ollama model tag
     technique_confidence_threshold: float = 0.70          # min confidence for Path B to proceed
     max_tokens: int = 1024
+    playbook_max_tokens: int = 16000
+    verify_max_tokens: int = 8000     # the review answers per step; thinking counts too
     timeout: float = 180.0
     # --- attribution (Path B) ------------------------------------------------
     num_ctx: int = 16384                                  # Ollama context window
@@ -318,6 +345,8 @@ class LLMConfig:
             os.getenv("LLM_CONFIDENCE_THRESHOLD", str(self.technique_confidence_threshold))
         )
         self.timeout = float(os.getenv("LLM_TIMEOUT", str(self.timeout)))
+        self.playbook_max_tokens = int(os.getenv("LLM_PLAYBOOK_MAX_TOKENS", str(self.playbook_max_tokens)))
+        self.verify_max_tokens = int(os.getenv("LLM_VERIFY_MAX_TOKENS", str(self.verify_max_tokens)))
         self.num_ctx_pinned = "LLM_NUM_CTX" in os.environ
         self.num_ctx = int(os.getenv("LLM_NUM_CTX", str(self.num_ctx)))
         self.reasoning_effort = os.getenv("LLM_REASONING_EFFORT", self.reasoning_effort)
@@ -416,6 +445,7 @@ class Config:
         self.server = ServerConfig()
         self.kafka = KafkaConfig()
         self.shuffle = ShuffleConfig()
+        self.soarca = SoarcaConfig()
         self.caldera = CalderaConfig()
         self.wazuh = WazuhConfig()
         self.nats = NATSConfig()

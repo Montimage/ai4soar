@@ -107,41 +107,15 @@ SCHEMA_DIR = os.path.join(ROOT, "data", "cacao-schemas")
 _SCHEMA_DRAFT = "2020-12"
 
 
-@functools.lru_cache(maxsize=1)
 def _schema_validator():
-    """Draft 2020-12 validator for playbook.json with all 51 $ref'd schemas preregistered.
-
-    Returns None (rather than raising) if the vendored schemas or a new enough jsonschema
-    are absent, so the evaluator degrades to our own checks instead of failing the run.
-    Callers MUST surface `schema_available` when it is False: a missing validator makes
-    `schema_valid` None, which any percentage aggregation silently counts as a failure.
-    """
-    entry = os.path.join(SCHEMA_DIR, "playbook.json")
-    if not os.path.exists(entry):
-        return None
-    try:
-        from jsonschema import Draft202012Validator
-        from referencing import Registry, Resource
-        from referencing.jsonschema import DRAFT202012
-    except ImportError:
+    """The shared validator (core/playbook_verification/schema.py); None if unavailable."""
+    from core.playbook_verification.schema import schema_validator
+    v = schema_validator()
+    if v is None:
         sys.stderr.write(
             "WARNING official CACAO schema validation is DISABLED: it needs "
             "jsonschema>=4.18 and referencing.\n")
-        return None
-    with open(entry, encoding="utf-8") as f:
-        schema = json.load(f)
-    resources = []
-    for path in glob.glob(os.path.join(SCHEMA_DIR, "**", "*.json"), recursive=True):
-        try:
-            with open(path, encoding="utf-8") as f:
-                sub = json.load(f)
-        except Exception:
-            continue
-        if isinstance(sub, dict) and "$id" in sub:
-            resources.append((sub["$id"],
-                              Resource(contents=sub, specification=DRAFT202012)))
-    registry = Registry().with_resources(resources)
-    return Draft202012Validator(schema, registry=registry)
+    return v
 
 
 def cacao_schema_check(pb: Dict) -> Dict:

@@ -64,6 +64,8 @@ _TECHNIQUE_FALLBACK: Dict[str, str] = {
 }
 
 # Confidence assigned when the model returns a well-formed ranking
+STAGE2_MAX_CONFIDENCE = 0.90
+
 _DERIVED_CONFIDENCE = {
     "clean_full":    0.75,   # valid JSON, top-1 in vocab, full ranking returned
     "clean_partial": 0.60,   # valid JSON, top-1 in vocab, short ranking
@@ -263,6 +265,8 @@ class PathBRecommender:
             return None
 
         conf = pred["confidence"]
+        if conf is not None:
+            conf = min(float(conf), STAGE2_MAX_CONFIDENCE)
         if conf is None:
             conf = self._derive_confidence(pred)
             logger.info(

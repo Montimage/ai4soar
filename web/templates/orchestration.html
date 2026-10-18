@@ -323,41 +323,6 @@ function renderOrchResult(r) {
     return (typeof MITRE_NAMES !== 'undefined' && MITRE_NAMES[id]) || '';
   };
 
-  /* When the alert came from the labelled benchmark, say plainly whether the
-     orchestrator got it right. Sub-techniques count as a parent-level hit (T1499.002
-     vs T1499) because the playbook library is indexed at both levels. */
-  const verdictSection = (() => {
-    const b = selectedAlert && selectedAlert._benchmark;
-    if (!b) return '';
-    const gt = (b.ground_truth || {}).technique_ids || [];
-    if (!gt.length) return '';
-
-    const parent   = id => String(id).split('.')[0];
-    const gtSet    = new Set(gt);
-    const gtParent = new Set(gt.map(parent));
-    const top1     = ranked[0] || (r.technique_ids || [])[0] || '';
-    const all      = ranked.length ? ranked : (r.technique_ids || []);
-
-    // Benchmark alerts only (they carry the expected answer): a short pill in the
-    // status row; the full sentence is its tooltip
-    let tier, short, text;
-    if (gtSet.has(top1)) {
-      tier = 'HIGH'; short = `✓ ${top1} at rank 1`;
-      text = `Exact match at rank 1 — expected ${gt.join(', ')}`;
-    } else if (gtParent.has(parent(top1))) {
-      tier = 'HIGH'; short = `✓ parent of ${gt.join(', ')} at rank 1`;
-      text = `Parent match at rank 1 — predicted ${top1}, expected ${gt.join(', ')}`;
-    } else if (all.some(t => gtSet.has(t) || gtParent.has(parent(t)))) {
-      const at = all.findIndex(t => gtSet.has(t) || gtParent.has(parent(t))) + 1;
-      tier = 'MEDIUM'; short = `${gt.join(', ')} at rank ${at}`;
-      text = `Expected ${gt.join(', ')} found at rank ${at}, not rank 1`;
-    } else {
-      tier = 'LOW'; short = `✗ expected ${gt.join(', ')}`;
-      text = `Miss — expected ${gt.join(', ')}, none of the ranked techniques match`;
-    }
-    return `<span class="tier-badge tier-${tier}" title="Benchmark check: ${escHtml(text)}">${escHtml(short)}</span>`;
-  })();
-
   // Defined before rankedSection, which shows the tactic next to its title
   const tacticBadges = (r.tactics || [])
     .map(t => `<span class="badge font-monospace me-1 mb-1 text-dark"
@@ -511,7 +476,6 @@ function renderOrchResult(r) {
       ${tierBadge(r.confidence_tier, r.confidence)}
       ${pathBadges}
       ${actionBadges}
-      ${verdictSection}
     </div>
     ${ranked.length
         ? rankedSection
