@@ -23,7 +23,7 @@ from core.exceptions import LLMUnavailableError
 from core.intelligent_orchestration.parameterizer import AI4SOAR_IDENTITY
 from utils.llm.client import call_llm, strip_fences
 
-# The same agent as the library templates (playbooks/README.md): the system that runs the
+# The same agent as the library templates (playbooks/*.yaml): the system that runs the
 # steps. Each step acts over SSH on its target, the affected host.
 RUNNER_AGENT_ID = "linux--3a7f9c1e-5b2d-4c8a-9e6f-7d1b2c3e4f50"
 RUNNER_AGENT = {

@@ -311,7 +311,7 @@ class LLMConfig:
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     model: str = "gpt-4o-mini"                            # OpenAI model
-    anthropic_model: str = "claude-opus-4-8"              # Anthropic model — best
+    anthropic_model: str = "claude-opus-5-5"              # Anthropic model
                                                           # attribution accuracy on the
                                                           # 37-alert benchmark
     ollama_host: str = "localhost"                        # local Ollama server host

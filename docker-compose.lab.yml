@@ -20,5 +20,5 @@ services:
     # its own firewall; root sees every process's open files (fuser), as on a real host
     cap_add: [NET_ADMIN, SYS_PTRACE]
     ports:
-      - 172.17.0.1:2224:22
+      - ${LAB_HOST_IP:-172.17.0.1}:2224:22
     restart: unless-stopped
