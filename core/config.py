@@ -9,6 +9,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _decode_kafka_value(m):
+    """JSON, or MMT-Probe CSV text; non-alert probe reports become None."""
+    from core.intelligent_orchestration.enrichment.adapters.mmt_probe import decode_message
+    try:
+        return decode_message(m)
+    except ValueError:
+        return (m or b'').decode('utf-8', errors='replace')
+
+
 @dataclass
 class ServerConfig:
     """Server configuration"""
@@ -101,7 +110,7 @@ class KafkaConfig:
             **self.get_connection_config(),
             'group_id': self.group_id,
             'auto_offset_reset': 'earliest',
-            'value_deserializer': lambda m: json.loads(m.decode('utf-8')),
+            'value_deserializer': _decode_kafka_value,
         }
 
     def get_legacy_config(self):
