@@ -96,6 +96,9 @@ Values the playbook templates take from the deployment rather than from the aler
 | `KAFKA_SSL_CAFILE`, `KAFKA_SSL_CERTFILE`, `KAFKA_SSL_KEYFILE`, `KAFKA_SSL_PASSWORD` | — | TLS (paths as seen by AI4SOAR; mount the files with Docker) |
 | `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | — | SASL: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512` |
 
+Accepted message formats (JSON alerts, native mmt-probe CSV / JSON array / STIX, the ACAS
+shape): [ALERT_FORMATS.md](ALERT_FORMATS.md).
+
 ## MongoDB
 
 | Variable | Default |
