@@ -26,6 +26,9 @@ Also included:
   the UI
 - **Demo lab**: a throwaway Linux server the playbooks really act on, and ten example
   alerts covering paths A, B and D
+- **Native mmt-probe alerts**: CSV, JSON array and STIX 2.1 bundles straight from the
+  probe's Kafka / NATS output, as well as the ACAS `{type, payload}` shape
+  (see [docs/ALERT_FORMATS.md](docs/ALERT_FORMATS.md))
 
 ## Quick start
 
@@ -96,4 +99,4 @@ python3 -m core.intelligent_orchestration --alert path/to/alert.json --k 5 --jso
 | `deploy/` | Images of the SOARCA sandbox and the demo victim |
 | `scripts/` | Benchmark / example alert loaders, Shuffle library publishing, metrics |
 | `tests/` | Unit tests |
-| `docs/` | Installation, configuration, hackathon |
+| `docs/` | Installation, configuration, alert formats, hackathon |

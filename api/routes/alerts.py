@@ -16,6 +16,7 @@ from core.database.alert_service import AlertService
 from core.database.benchmark_service import MODE_VISIBLE, MODES, benchmark_service
 from core.config import config
 from core.intelligent_orchestration.enrichment.pipeline import normalize_alert
+from core.intelligent_orchestration.enrichment.adapters.mmt_probe import decode_message
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,12 @@ async def _nats_background_listener(nats_url: str, subject: str) -> None:
         async def _handler(msg):
             raw = msg.data.decode("utf-8", errors="replace")
             try:
-                parsed = json.loads(raw)
+                parsed = decode_message(raw)
+                if parsed is None:          # empty / non-alert probe report
+                    return
                 normalized, _ = normalize_alert(parsed)
+                if not isinstance(normalized, dict):
+                    raise ValueError("alert is not an object")
                 loop = asyncio.get_event_loop()
                 loop.run_in_executor(None, alert_service.save_alert, normalized)
                 compact = json.dumps(normalized)
@@ -121,7 +126,10 @@ def _kafka_background_listener(key, topic: str, from_beginning: bool) -> None:
                 for msg in messages:
                     raw = (msg.value or b'').decode('utf-8', errors='replace')
                     try:
-                        normalized, _ = normalize_alert(json.loads(raw))
+                        parsed = decode_message(raw)
+                        if parsed is None:  # empty / non-alert probe report
+                            continue
+                        normalized, _ = normalize_alert(parsed)
                         # Stable id from the message position: replaying a topic upserts
                         # the same MongoDB documents instead of duplicating them
                         normalized.setdefault('_id', f"kafka-{tp.topic}-{tp.partition}-{msg.offset}")

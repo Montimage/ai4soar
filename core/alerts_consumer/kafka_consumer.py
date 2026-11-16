@@ -21,7 +21,9 @@ class KafkaAlertConsumer:
         """
         Poll one alert message from `topic`, or from the scenario's triage topic.
 
-        Returns the deserialized message dict, or None if the topic is empty.
+        Returns the deserialized message (a JSON value, or the text of an
+        MMT-Probe CSV security report), or None if the topic holds no alert.
+        Non-alert probe reports (deserialized to None) are skipped.
         """
         triage_topic = topic
         if not triage_topic:
@@ -39,6 +41,8 @@ class KafkaAlertConsumer:
             if batch:
                 for _tp, messages in batch.items():
                     for msg in messages:
+                        if msg.value is None:   # skipped by the deserializer (non-alert probe report)
+                            continue
                         logger.info(f"Consumed alert from '{triage_topic}'")
                         return msg.value
             logger.debug(f"No messages on '{triage_topic}'")
